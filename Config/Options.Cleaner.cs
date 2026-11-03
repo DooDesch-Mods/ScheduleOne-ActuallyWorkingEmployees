@@ -17,25 +17,5 @@ namespace ActuallyWorkingEmployees.Config
         public static readonly IntOption CleanerMaxBins = new IntOption("Cleaner", "MaxBins",
             "Max bins", "Bins one cleaner can be assigned. Vanilla: 6.",
             6, 1, 32, 1, hostOnly: true, balance: true);
-
-        public static readonly FloatOption CleanerWorkSpeed = new FloatOption("Cleaner", "WorkSpeed",
-            "Work speed", "Multiplier for the speed of every cleaner action. Vanilla: 1.",
-            1f, 0.25f, 10f, 0.05f, hostOnly: true, balance: true);
-
-        public static readonly FloatOption CleanerTrashPickupTime = new FloatOption("Cleaner", "TrashPickupTime",
-            "Trash pickup time", "Seconds to pick up a piece of trash. Vanilla: 0.9.",
-            0.9f, 0.1f, 10f, 0.1f, hostOnly: true, balance: true);
-
-        public static readonly FloatOption CleanerBagTime = new FloatOption("Cleaner", "BagTime",
-            "Bag trash can time", "Seconds to bag a trash can. Vanilla: 3.",
-            3f, 0.5f, 30f, 0.5f, hostOnly: true, balance: true);
-
-        public static readonly FloatOption CleanerDisposeTime = new FloatOption("Cleaner", "DisposeTime",
-            "Dispose bag time", "Seconds to dispose of a trash bag. Vanilla: 1.2.",
-            1.2f, 0.1f, 30f, 0.1f, hostOnly: true, balance: true);
-
-        public static readonly FloatOption CleanerEmptyGrabberTime = new FloatOption("Cleaner", "EmptyGrabberTime",
-            "Empty grabber time scale", "Multiplier for the time to empty a trash grabber. Vanilla: 1.",
-            1f, 0.25f, 10f, 0.05f, hostOnly: true, balance: true);
     }
 }
