@@ -62,7 +62,7 @@ namespace ActuallyWorkingEmployees.Compat
         /// Every interop method that a Harmony owner other than this mod has patched so far, by native address, with a
         /// description "Type.Method (owner, owner)". Methods whose address cannot be read are left out.
         /// </summary>
-        private static Dictionary<IntPtr, List<KeyValuePair<MethodBase, string>>> ForeignPatched()
+        private static Dictionary<IntPtr, List<KeyValuePair<MethodBase, string>>> ForeignPatched(bool includeOwn = false)
         {
             var map = new Dictionary<IntPtr, List<KeyValuePair<MethodBase, string>>>();
             foreach (MethodBase m in HarmonyLib.Harmony.GetAllPatchedMethods())
@@ -75,7 +75,7 @@ namespace ActuallyWorkingEmployees.Compat
                     if (info == null) continue;
                     var others = new List<string>();
                     foreach (string owner in info.Owners)
-                        if (owner != null && owner.IndexOf(OwnAssembly, StringComparison.OrdinalIgnoreCase) < 0) others.Add(owner);
+                        if (owner != null && (includeOwn || owner.IndexOf(OwnAssembly, StringComparison.OrdinalIgnoreCase) < 0)) others.Add(owner);
                     if (others.Count == 0) continue;
                     IntPtr a = TryAddress(m, out _);
                     if (a == IntPtr.Zero) continue;
@@ -88,19 +88,28 @@ namespace ActuallyWorkingEmployees.Compat
         }
 
         /// <summary>
-        /// False when <paramref name="m"/> shares its native address with a different method that another mod has already
-        /// patched: a second detour on that address overflows the stack. True when no such patch exists or the address is
-        /// unknown. Meant for a patch class's <c>Prepare(MethodBase)</c>. Logs one warning per refused method.
+        /// False when <paramref name="m"/> shares its native address with a different method that any mod (this one
+        /// included) has already patched: a second detour on that address overflows the stack. Also false when the address
+        /// cannot be read, because the method may share code with a patched one. Meant for a patch class's
+        /// <c>Prepare(MethodBase)</c>. Logs one warning per refused method.
         /// </summary>
         internal static bool AllowPatch(MethodBase m)
         {
-            IntPtr a = TryAddress(m, out _);
-            if (a == IntPtr.Zero) return true;
-            if (!ForeignPatched().TryGetValue(a, out var list)) return true;
+            string label = m?.DeclaringType?.Name + "." + m?.Name;
+            IntPtr a;
+            string problem;
+            try { a = TryAddress(m, out problem); }
+            catch (Exception e) { a = IntPtr.Zero; problem = "address read failed, " + e.GetType().Name + ": " + e.Message; }
+            if (a == IntPtr.Zero)
+            {
+                Note("[NativeMethods] " + label + " not patched, its native address is unknown (" + problem + ").", true);
+                return false;
+            }
+            if (!ForeignPatched(true).TryGetValue(a, out var list)) return true;
             foreach (var kv in list)
             {
                 if (kv.Key == m) continue;
-                Note("[NativeMethods] " + m.DeclaringType?.Name + "." + m.Name + " not patched: its native code at 0x" + a.ToString("X")
+                Note("[NativeMethods] " + label + " not patched: its native code at 0x" + a.ToString("X")
                     + " is already patched through " + kv.Value + ".", !IsHwe(kv.Value));
                 return false;
             }
@@ -134,7 +143,7 @@ namespace ActuallyWorkingEmployees.Compat
                     continue;
                 }
 
-                foreign ??= ForeignPatched();
+                foreign ??= ForeignPatched(true);
                 string other = null;
                 if (foreign.TryGetValue(a, out var patchedBy))
                     foreach (var kv in patchedBy)
