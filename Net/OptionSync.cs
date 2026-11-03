@@ -56,6 +56,7 @@ namespace ActuallyWorkingEmployees.Networking
         private string _badWire = "";
 
         private bool _wasClient;
+        private int _guestWas = -1;   // last HostPoll: 1 a guest was there, 0 none, -1 not polled yet
 
         public void Init()
         {
@@ -75,6 +76,7 @@ namespace ActuallyWorkingEmployees.Networking
             _lastBytes = 0;
             _poll = 0f;
             _retryIn = 0f;
+            _guestWas = -1;
             if (!keepHostValues) _wasClient = false;
         }
 
@@ -116,7 +118,16 @@ namespace ActuallyWorkingEmployees.Networking
 
             // A lobby with only the host in it needs nothing yet; the write happens when the first guest arrives.
             // Singleplayer has no lobby at all.
-            if (!Net.IsCoop()) return;
+            bool guest = Net.IsCoop();
+            if ((guest ? 1 : 0) != _guestWas)
+            {
+                // Logged on every change, so a host that stops sending shows why; the first poll without a guest stays quiet.
+                if (guest || _guestWas == 1)
+                    Core.Log?.Msg("[CoopSync] " + (guest ? "guest present, publishing" : "no guest, publishing paused")
+                        + ": lobby players " + Net.LobbyPlayers() + ", remote clients " + Net.RemoteClients() + ".");
+                _guestWas = guest ? 1 : 0;
+            }
+            if (!guest) return;
             if (_retryIn > 0f) return;
 
             Lobby lobby = SafeLobby("host poll");
