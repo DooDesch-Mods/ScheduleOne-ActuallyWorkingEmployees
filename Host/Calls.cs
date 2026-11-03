@@ -24,6 +24,9 @@ namespace ActuallyWorkingEmployees.Host
             ["set"] = Set,
             ["reset"] = Reset,
             ["resetAll"] = _ => ResetAll(),
+            ["diag"] = DiagCalls.Diag,
+            ["doctorRun"] = DiagCalls.DoctorRun,
+            ["analyticsReset"] = DiagCalls.AnalyticsReset,
         };
 
         internal static string Run(string name, string arg, Func<JObject, JObject> handler)
@@ -64,6 +67,8 @@ namespace ActuallyWorkingEmployees.Host
             }
             JObject state = Role();
             state["groups"] = groups;
+            state["notice"] = DiagCalls.Notice();
+            state["hints"] = DiagCalls.Hints();
             return state;
         }
 
@@ -141,9 +146,9 @@ namespace ActuallyWorkingEmployees.Host
 
         private static JObject ResetAll()
         {
-            if (Net.IsClientOnly) { Core.Log?.Warning("[App] reset all refused: the host controls the settings."); return Fail(HostMsg); }
+            // On a client this resets the local options only: ResetAllToDefault skips every option the host controls.
             int n = Options.ResetAllToDefault();
-            Core.Log?.Msg("[App] reset all: " + n + " setting(s) back to default.");
+            Core.Log?.Msg("[App] reset all (" + Net.RoleText() + "): " + n + " setting(s) back to default.");
             var state = BuildState();
             state["changed"] = n;
             return state;

@@ -47,7 +47,23 @@ function shown(o) {
 
 function state() {
   const groups = GROUPS.map((name) => ({ name, options: OPTIONS.filter((o) => o.group === name).map(shown) }));
-  return { ok: true, role, locked: client(), vanilla: forced(), groups };
+  return { ok: true, role, locked: client(), vanilla: forced(), groups, notice: client() ? 'Some settings are set by the host.' : '', hints: {} };
+}
+
+function diag() {
+  const host = !client();
+  return {
+    ok: true, host,
+    badges: { enabled: true, problems: 1, items: host ? [
+      { name: 'Anna Berg', role: 'Botanist', sev: 'problem', text: 'No bed or locker assigned.' },
+      { name: 'Ben Roth', role: 'Packager', sev: 'ok', text: 'Working.' },
+    ] : [] },
+    doctor: { enabled: true, ran: host, total: 1, shown: 1, summary: '1 finding(s), 1 shown, 1 propert(ies)', ageSec: 3,
+      findings: [{ sev: 'problem', cat: 'Route', subject: 'Bench -> Rack', msg: 'No walkable path to the source.', fix: 'Furniture blocks it.', count: 1 }] },
+    analytics: { enabled: true, interval: 5, samples: 12, items: host ? [
+      { name: 'Anna Berg', role: 'Botanist', samples: 12, idle: 6, idlePct: 50, reasons: [{ text: 'I haven\'t been assigned a locker', count: 6 }] },
+    ] : [] },
+  };
 }
 
 function store(o, raw) {
@@ -88,10 +104,12 @@ export function call(name, arg) {
       o.value = o.def;
       return JSON.stringify({ ok: true, option: shown(o) });
     }
+    case 'diag': return JSON.stringify(diag());
+    case 'doctorRun': return JSON.stringify(client() ? { ok: false, msg: 'Host only.' } : diag());
+    case 'analyticsReset': return JSON.stringify(client() ? { ok: false, msg: 'Host only.' } : diag());
     case 'resetAll': {
-      if (client()) return JSON.stringify({ ok: false, msg: 'Set by the host.' });
       let n = 0;
-      for (const o of OPTIONS) if (o.value !== o.def) { o.value = o.def; n++; }
+      for (const o of OPTIONS) if (!(o.hostOnly && client()) && o.value !== o.def) { o.value = o.def; n++; }
       return JSON.stringify({ ...state(), changed: n });
     }
     default:

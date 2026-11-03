@@ -177,6 +177,59 @@ body {
 
 .empty { color: var(--muted); padding: 12px; }
 
+/* ---- hint and diagnostics panels ------------------------------------------------------------------------- */
+
+.hint {
+  flex: none;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #2A2412;
+  border: 1px solid #4A3E1C;
+  color: var(--warn);
+  font-size: 12px;
+}
+.diag { flex: none; gap: 8px; }
+.card {
+  flex: none;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+}
+.card-head { flex: none; flex-direction: row; align-items: center; gap: 8px; }
+.card-title { flex: 1; min-width: 0; font-weight: 700; }
+.card-sub { flex: none; color: var(--muted); font-size: 12px; }
+.card-note { color: var(--muted); font-size: 12px; }
+.badge-row, .finding {
+  flex: none;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.badge-text { flex: 1; min-width: 0; gap: 2px; }
+.badge-name { font-weight: 600; }
+.badge-msg { color: var(--muted); font-size: 12px; }
+.badge-fix { color: var(--accent); font-size: 12px; }
+.chip {
+  flex: none;
+  width: 64px;
+  padding: 2px 0;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--s3);
+  color: var(--muted);
+}
+.chip.problem { background: #2A1517; color: var(--danger); }
+.chip.warning { background: #2A2412; color: var(--warn); }
+.chip.ok { background: #12281C; color: var(--accent); }
+.an-row { flex: none; gap: 2px; padding: 6px 0; border-top: 1px solid var(--line); }
+.an-reason { color: var(--muted); font-size: 12px; padding-left: 8px; }
+
 /* ---- portrait: one column at a time ---------------------------------------------------------------------- */
 
 @media (orientation: portrait) {

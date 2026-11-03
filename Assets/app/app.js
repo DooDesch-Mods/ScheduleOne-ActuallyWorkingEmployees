@@ -22,6 +22,8 @@ const app = {
   role: '',
   group: 0,
   confirmAll: false,
+  notice: '',       // the host-controlled text shown on a client, empty when it is off
+  hints: {},        // group name -> hint text shown above that group's options
 };
 
 function el(tag, cls, text) {
@@ -115,7 +117,12 @@ function refreshOne(o, fresh, rowNode) {
   redrawRow(o, rowNode);
   drawGroups();
   app.raw = callRaw('list');
+  if (String(o.key).indexOf('diagnostics.') === 0) renderDiag();
+  if (String(o.key).indexOf('stations.') === 0) drawHint();
 }
+
+// Option keys are "group.name"; a row id keeps the dot out of the selector.
+function rowId(o) { return 'opt-' + String(o.key).replace('.', '-'); }
 
 function redrawRow(o, rowNode) {
   const parent = rowNode.parentNode;
@@ -127,17 +134,17 @@ function controls(o, rowNode) {
   const ctl = el('div', 'ctl');
 
   if (o.kind === 'bool') {
-    ctl.appendChild(button('small' + (o.value === 'true' ? '' : ' off'), null, 'On', () => { if (o.value !== 'true') commit(o, 'true', rowNode); }));
-    ctl.appendChild(button('small' + (o.value === 'false' ? '' : ' off'), null, 'Off', () => { if (o.value !== 'false') commit(o, 'false', rowNode); }));
+    ctl.appendChild(button('small opt-on' + (o.value === 'true' ? '' : ' off'), null, 'On', () => { if (o.value !== 'true') commit(o, 'true', rowNode); }));
+    ctl.appendChild(button('small opt-off' + (o.value === 'false' ? '' : ' off'), null, 'Off', () => { if (o.value !== 'false') commit(o, 'false', rowNode); }));
   } else if (o.kind === 'choice') {
     const seg = el('div', 'seg');
     for (const c of o.choices || []) {
-      seg.appendChild(button('small' + (c.toLowerCase() === String(o.value).toLowerCase() ? '' : ' off'), null, c, () => commit(o, c, rowNode)));
+      seg.appendChild(button('small opt-choice' + (c.toLowerCase() === String(o.value).toLowerCase() ? '' : ' off'), null, c, () => commit(o, c, rowNode)));
     }
     ctl.appendChild(seg);
   } else if (isNumber(o)) {
-    ctl.appendChild(button('ghost small square', 'i-minus', null, () => commit(o, stepped(o, -1), rowNode)));
-    const f = el('input', 'field');
+    ctl.appendChild(button('ghost small square opt-minus', 'i-minus', null, () => commit(o, stepped(o, -1), rowNode)));
+    const f = el('input', 'field opt-field');
     f.setAttribute('type', 'text');
     f.value = String(o.value);
     let done = o.value;
@@ -150,17 +157,18 @@ function controls(o, rowNode) {
     f.addEventListener('change', send);
     f.addEventListener('keydown', e => { if (e.key === 'Enter') send(f); });
     ctl.appendChild(f);
-    ctl.appendChild(button('ghost small square', 'i-plus', null, () => commit(o, stepped(o, 1), rowNode)));
+    ctl.appendChild(button('ghost small square opt-plus', 'i-plus', null, () => commit(o, stepped(o, 1), rowNode)));
   }
 
   if (!o.isDefault) {
-    ctl.appendChild(button('ghost small square', 'i-reset', null, () => reset(o, rowNode)));
+    ctl.appendChild(button('ghost small square opt-reset', 'i-reset', null, () => reset(o, rowNode)));
   }
   return ctl;
 }
 
 function buildRow(o) {
   const row = el('div', 'row' + (app.vanilla && o.balance ? ' dim' : ''));
+  row.setAttribute('id', rowId(o));
   const text = el('div', 'text');
   text.appendChild(el('div', 'label', o.label));
   if (o.help) text.appendChild(el('div', 'help', o.help));
@@ -178,7 +186,7 @@ function buildRow(o) {
   ctl.appendChild(icon('i-lock', 'dim'));
   ctl.appendChild(el('div', 'value locked', o.waiting ? 'Waiting for the host.' : o.text));
   row.appendChild(ctl);
-  if (!o.waiting) text.appendChild(el('div', 'sub', 'Set by the host.'));
+  if (!o.waiting && app.notice) text.appendChild(el('div', 'sub', 'Set by the host.'));
   return row;
 }
 
@@ -194,6 +202,7 @@ function drawGroups() {
   nav.replaceChildren();
   app.groups.forEach((g, i) => {
     const b = el('div', 'group' + (i === app.group ? ' on' : ''));
+    b.setAttribute('id', 'group-' + String(g.name).toLowerCase());
     b.appendChild(icon(groupIcon(g.name)));
     b.appendChild(el('div', 'name', g.name));
     const n = changedCount(g);
@@ -213,33 +222,177 @@ function drawPane() {
   if (!g) { rows.appendChild(el('div', 'empty', 'No settings.')); return; }
 
   head.appendChild(el('div', 'pane-title', g.name));
-  if (!app.locked && changedCount(g) > 0) {
-    head.appendChild(button('ghost small', 'i-reset', 'Reset group', () => {
+  if (g.name === 'Diagnostics') {
+    const b = button('ghost small', null, 'Refresh', () => renderDiag());
+    b.setAttribute('id', 'diag-refresh');
+    head.appendChild(b);
+  }
+  if (g.options.some(o => !o.isDefault && o.editable)) {
+    const b = button('ghost small', 'i-reset', 'Reset group', () => {
       for (const o of g.options) if (!o.isDefault && o.editable) call('reset', { key: o.key });
       refresh(true);
-    }));
+    });
+    b.setAttribute('id', 'reset-group');
+    head.appendChild(b);
+  }
+  const hint = el('div', 'hint hidden');
+  hint.setAttribute('id', 'group-hint');
+  rows.appendChild(hint);
+  if (g.name === 'Diagnostics') {
+    const box = el('div', 'diag');
+    box.setAttribute('id', 'diag');
+    rows.appendChild(box);
   }
   if (!g.options.length) { rows.appendChild(el('div', 'empty', 'No settings.')); return; }
   for (const o of g.options) rows.appendChild(buildRow(o));
+  drawHint();
+  if (g.name === 'Diagnostics') renderDiag();
+}
+
+// The hint of the open group, from the last list answer.
+function drawHint() {
+  const g = app.groups[app.group];
+  const node = $('group-hint');
+  if (!g || !node) return;
+  let hints = app.hints;
+  try { hints = JSON.parse(app.raw).hints || {}; } catch (e) { console.error('[awe] hint: the list answer is not JSON: ' + e.message); }
+  const text = hints[g.name] || '';
+  node.textContent = text;
+  node.className = text ? 'hint' : 'hint hidden';
+}
+
+// ---- the Diagnostics panels --------------------------------------------------------------------------------------
+
+function card(id, title) {
+  const c = el('div', 'card');
+  c.setAttribute('id', id);
+  const head = el('div', 'card-head');
+  head.appendChild(el('div', 'card-title', title));
+  c.appendChild(head);
+  return { c, head };
+}
+
+function note(id, text) {
+  const n = el('div', 'card-note', text);
+  n.setAttribute('id', id);
+  return n;
+}
+
+function sevLabel(s) { return s === 'problem' ? 'Problem' : s === 'warning' ? 'Warning' : s === 'ok' ? 'OK' : 'Info'; }
+
+function badgesCard(d) {
+  const b = d.badges;
+  const { c, head } = card('diag-badges', 'Employee badges');
+  if (!d.host) { c.appendChild(note('diag-badges-note', 'Host only.')); return c; }
+  if (!b.enabled) { c.appendChild(note('diag-badges-note', 'Off. Turn on Show problem badges.')); return c; }
+  const count = el('div', 'card-sub', b.problems + ' of ' + b.items.length + ' with a problem');
+  count.setAttribute('id', 'diag-badges-count');
+  head.appendChild(count);
+  if (!b.items.length) { c.appendChild(note('diag-badges-note', 'No employees.')); return c; }
+  for (const it of b.items) {
+    const row = el('div', 'badge-row sev-' + it.sev);
+    const chip = el('div', 'chip ' + it.sev, sevLabel(it.sev));
+    row.appendChild(chip);
+    const t = el('div', 'badge-text');
+    t.appendChild(el('div', 'badge-name', it.name + ' - ' + it.role));
+    t.appendChild(el('div', 'badge-msg', it.text));
+    row.appendChild(t);
+    c.appendChild(row);
+  }
+  return c;
+}
+
+function doctorCard(d) {
+  const x = d.doctor;
+  const { c, head } = card('diag-doctor', 'Setup Doctor');
+  const run = button('small' + (x.enabled && d.host ? '' : ' disabled'), null, 'Run check', () => {
+    if (!x.enabled || !d.host) return;
+    const r = call('doctorRun');
+    if (!r.ok) { say(r.msg || 'Something went wrong.'); return; }
+    say('');
+    renderDiag(r);
+  });
+  run.setAttribute('id', 'diag-doctor-run');
+  head.appendChild(run);
+  if (!d.host) { c.appendChild(note('diag-doctor-note', 'Host only.')); return c; }
+  if (!x.enabled) { c.appendChild(note('diag-doctor-note', 'Off. Turn on Enable Setup Doctor.')); return c; }
+  if (!x.ran) { c.appendChild(note('diag-doctor-summary', 'Not run yet.')); return c; }
+  c.appendChild(note('diag-doctor-summary', x.summary + ', ' + x.ageSec + ' s ago'));
+  if (x.total === 0) { c.appendChild(note('diag-doctor-empty', 'No problems found.')); return c; }
+  for (const f of x.findings) {
+    const row = el('div', 'finding sev-' + f.sev);
+    row.appendChild(el('div', 'chip ' + f.sev, sevLabel(f.sev)));
+    const t = el('div', 'badge-text');
+    t.appendChild(el('div', 'badge-name', (f.count > 1 ? f.count + 'x ' : '') + f.msg));
+    t.appendChild(el('div', 'badge-msg', f.cat + ': ' + f.subject));
+    if (f.fix) t.appendChild(el('div', 'badge-fix', f.fix));
+    row.appendChild(t);
+    c.appendChild(row);
+  }
+  if (x.total > x.shown) c.appendChild(note('diag-doctor-more', (x.total - x.shown) + ' more not shown.'));
+  return c;
+}
+
+function analyticsCard(d) {
+  const a = d.analytics;
+  const { c, head } = card('diag-analytics', 'Idle time');
+  const clear = button('ghost small' + (a.enabled && d.host ? '' : ' disabled'), null, 'Clear', () => {
+    if (!a.enabled || !d.host) return;
+    const r = call('analyticsReset');
+    if (!r.ok) { say(r.msg || 'Something went wrong.'); return; }
+    say('');
+    renderDiag(r);
+  });
+  clear.setAttribute('id', 'diag-analytics-reset');
+  head.appendChild(clear);
+  if (!d.host) { c.appendChild(note('diag-analytics-status', 'Host only.')); return c; }
+  if (!a.enabled) { c.appendChild(note('diag-analytics-status', 'Off. Turn on Track idle time and reason.')); return c; }
+  c.appendChild(note('diag-analytics-status', 'Every ' + a.interval + ' s, ' + a.samples + ' samples'));
+  for (const it of a.items) {
+    const row = el('div', 'an-row');
+    row.appendChild(el('div', 'badge-name', it.name + ' - ' + it.role));
+    row.appendChild(el('div', 'badge-msg', 'Idle ' + it.idlePct + '% (' + it.idle + ' of ' + it.samples + ')'));
+    for (const r of it.reasons) row.appendChild(el('div', 'an-reason', r.count + 'x ' + r.text));
+    c.appendChild(row);
+  }
+  return c;
+}
+
+// Rebuilds the three panels from the host. A call that already answered with the state passes it in.
+function renderDiag(answer) {
+  const box = $('diag');
+  if (!box) return;
+  const d = answer || call('diag');
+  box.replaceChildren();
+  if (!d.ok) { box.appendChild(note('diag-error', d.msg || 'Something went wrong.')); return; }
+  box.appendChild(badgesCard(d));
+  box.appendChild(doctorCard(d));
+  box.appendChild(analyticsCard(d));
 }
 
 function drawBar() {
   $('role').textContent = app.role === 'client' ? 'Client' : app.role === 'host' ? 'Host' : '';
   const end = $('bar-end');
   end.replaceChildren();
-  if (app.locked) return;
+  // A client resets its own local options; the host's values stay as they are.
   if (app.confirmAll) {
-    end.appendChild(button('danger small', null, 'Reset all?', () => { app.confirmAll = false; doResetAll(); }));
-    end.appendChild(button('ghost small', null, 'Cancel', () => { app.confirmAll = false; drawBar(); }));
+    const yes = button('danger small', null, 'Reset all?', () => { app.confirmAll = false; doResetAll(); });
+    yes.setAttribute('id', 'reset-all-confirm');
+    const no = button('ghost small', null, 'Cancel', () => { app.confirmAll = false; drawBar(); });
+    no.setAttribute('id', 'reset-all-cancel');
+    end.appendChild(yes);
+    end.appendChild(no);
   } else {
-    end.appendChild(button('ghost small', 'i-reset', 'Reset all', () => { app.confirmAll = true; drawBar(); }));
+    const b = button('ghost small', 'i-reset', 'Reset all', () => { app.confirmAll = true; drawBar(); });
+    b.setAttribute('id', 'reset-all');
+    end.appendChild(b);
   }
 }
 
 function drawBand() {
   const band = $('band');
   let msg = '';
-  if (app.locked) msg = 'Set by the host.';
+  if (app.locked) msg = app.notice;
   else if (app.vanilla) msg = 'Vanilla balance is on.';
   if (!msg) { band.className = 'band hidden'; return; }
   $('band-text').textContent = msg;
@@ -277,6 +430,8 @@ function apply(state, raw) {
   app.locked = !!state.locked;
   app.vanilla = !!state.vanilla;
   app.role = state.role || '';
+  app.notice = state.notice || '';
+  app.hints = state.hints || {};
   app.raw = raw === null ? callRaw('list') : raw;
   drawAll();
 }

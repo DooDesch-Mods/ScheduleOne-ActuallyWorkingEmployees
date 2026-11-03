@@ -3,11 +3,11 @@ namespace ActuallyWorkingEmployees.Config
     public static partial class Options
     {
         public static readonly BoolOption ShowProblemBadges = new BoolOption("Diagnostics", "ShowProblemBadges",
-            "Show problem badges", "Shows problem badges above employees while the management clipboard is open.",
-            false, hostOnly: false, balance: false);
+            "Show problem badges", "Lists a problem badge for each employee in the Employees panel of this page. Host only.",
+            false, hostOnly: true, balance: false);
 
         public static readonly BoolOption EnableSetupDoctor = new BoolOption("Diagnostics", "EnableSetupDoctor",
-            "Enable Setup Doctor", "Turns on the Setup Doctor, which lists problems in the employee setup.",
+            "Enable Setup Doctor", "Adds a Run check button to this page. It lists problems in the employee setup.",
             false, hostOnly: true, balance: false);
 
         public static readonly BoolOption DoctorCheckReachability = new BoolOption("Diagnostics", "DoctorCheckReachability",
@@ -19,7 +19,7 @@ namespace ActuallyWorkingEmployees.Config
             25, 5, 200, 5, hostOnly: true, balance: false);
 
         public static readonly BoolOption EnableAnalytics = new BoolOption("Diagnostics", "EnableAnalytics",
-            "Track idle time and reason", "Records how long each employee idles and why.",
+            "Track idle time and reason", "Records how long each employee idles and why, shown on this page.",
             false, hostOnly: true, balance: false);
 
         public static readonly FloatOption AnalyticsIntervalSeconds = new FloatOption("Diagnostics", "AnalyticsIntervalSeconds",
@@ -31,7 +31,7 @@ namespace ActuallyWorkingEmployees.Config
             true, hostOnly: false, balance: false);
 
         public static readonly BoolOption ShowCoopLockNotice = new BoolOption("Diagnostics", "ShowCoopLockNotice",
-            "Show host-controlled notice", "Shows a notice on a co-op client when the host controls a setting.",
+            "Show host-controlled notice", "Shows a notice at the top of this app on a co-op client when the host controls settings.",
             true, hostOnly: false, balance: false);
 
         // ResetToVanilla is deferred: it is a button, and Options.ResetAllToDefault covers it.

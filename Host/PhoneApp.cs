@@ -54,7 +54,7 @@ namespace ActuallyWorkingEmployees.Host
                 return;
             }
 #if DEBUG
-            DevConsole.Register("app", "awe app <open|dump>", DevCommand);
+            DevConsole.Register("app", "awe app <open|dump|diag>", DevCommand);
 #endif
         }
 
@@ -106,7 +106,16 @@ namespace ActuallyWorkingEmployees.Host
                 Core.Log?.Msg("[Dev] awe app dump: " + groups + " groups, " + Options.All.Count + " options rendered, "
                     + locked + " locked, role=" + state["role"] + ", " + state.ToString(Newtonsoft.Json.Formatting.None).Length + " chars.");
             }
-            else Core.Log?.Warning("[Dev] awe app <open|dump>");
+            else if (sub == "diag")
+            {
+                var d = DiagCalls.Build();
+                Core.Log?.Msg("[Dev] awe app diag: host=" + ((bool)d["host"] ? 1 : 0)
+                    + " badges=" + ((Newtonsoft.Json.Linq.JArray)d["badges"]["items"]).Count + "/" + (int)d["badges"]["problems"]
+                    + " doctor=" + ((bool)d["doctor"]["ran"] ? "ran" : "none") + ":" + (int)d["doctor"]["total"]
+                    + " analytics=" + ((Newtonsoft.Json.Linq.JArray)d["analytics"]["items"]).Count + "/" + (int)d["analytics"]["samples"]
+                    + " notice=" + (string.IsNullOrEmpty((string)Calls.BuildState()["notice"]) ? 0 : 1) + ".");
+            }
+            else Core.Log?.Warning("[Dev] awe app <open|dump|diag>");
         }
 #endif
     }
