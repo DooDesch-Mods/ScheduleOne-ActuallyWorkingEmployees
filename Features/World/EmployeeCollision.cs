@@ -13,10 +13,15 @@ namespace ActuallyWorkingEmployees.Features.World
     /// <summary>
     /// Employees that walk through each other (DisableEmployeeCollision) and through furniture (DisableFurnitureCollision).
     ///
-    /// Employees: every collider under an employee becomes a trigger, and its NavMeshAgent shrinks to a small radius
-    /// without obstacle avoidance, so agents no longer push each other aside. Furniture: every NavMeshObstacle under a
-    /// placed buildable item stops carving the NavMesh, so paths run through it. Both are host-side only; the host
-    /// simulates every employee. What a switch changed is remembered and written back when it goes off again.
+    /// Employees: every collider under an employee becomes a trigger, its NavMeshAgent shrinks to a small radius, and
+    /// obstacle avoidance goes off through NPCMovement.SetObstacleAvoidanceEnabled(false). Setting the agent's avoidance
+    /// type alone does not hold: NPCMovement.UpdateObstacleAvoidance runs every 0.5 s on the host and puts the default
+    /// type back whenever a player is within 25 m and the movement's own flag is on.
+    /// Furniture: every NavMeshObstacle under a placed buildable item is disabled, as BuildManager.DisableNavigation does
+    /// for the build preview. Carving off alone is not enough: a non-carving obstacle is still a moving obstacle that local
+    /// avoidance steers around, and tightly placed lab ovens and cauldrons leave no way between them.
+    /// Both are host-side only; the host simulates every employee. What a switch changed is remembered and written back
+    /// when it goes off again.
     /// </summary>
     internal sealed class EmployeeCollision : IFeature
     {
@@ -28,14 +33,15 @@ namespace ActuallyWorkingEmployees.Features.World
         private const float FurniturePass = 5f;      // seconds between furniture passes
         private const float FurnitureRescan = 30f;   // a full rescan even when the item count did not change
 
-        private struct AgentOriginal { internal float Radius; internal int Priority; internal ObstacleAvoidanceType Avoidance; }
+        private struct AgentOriginal { internal float Radius; internal int Priority; internal ObstacleAvoidanceType Avoidance; internal bool AvoidanceFlag; }
 
         // Employees seen by the last pass (instance id -> changes made). Colliders that were triggers before stay as they are.
         private readonly Dictionary<int, List<UnityEngine.Collider>> _changedColliders = new Dictionary<int, List<UnityEngine.Collider>>();
         private readonly Dictionary<int, AgentOriginal> _agents = new Dictionary<int, AgentOriginal>();
         private readonly Dictionary<int, UnityEngine.Component> _agentOwner = new Dictionary<int, UnityEngine.Component>();
+        private readonly Dictionary<int, Il2CppScheduleOne.NPCs.NPCMovement> _movement = new Dictionary<int, Il2CppScheduleOne.NPCs.NPCMovement>();
 
-        private readonly List<NavMeshObstacle> _carving = new List<NavMeshObstacle>();   // obstacles this feature switched off
+        private readonly List<NavMeshObstacle> _disabled = new List<NavMeshObstacle>();   // obstacles this feature switched off
         private readonly HashSet<int> _scannedItems = new HashSet<int>();
         private bool _empWas, _furnWas;
         private int _lastItemCount = -1, _obstaclesSeen;
@@ -54,7 +60,8 @@ namespace ActuallyWorkingEmployees.Features.World
             _changedColliders.Clear();
             _agents.Clear();
             _agentOwner.Clear();
-            _carving.Clear();
+            _movement.Clear();
+            _disabled.Clear();
             _scannedItems.Clear();
             _empWas = _furnWas = false;
             _lastItemCount = -1;
@@ -64,7 +71,8 @@ namespace ActuallyWorkingEmployees.Features.World
 
         public string Status =>
             "employees=" + (Options.DisableEmployeeCollision.Value ? 1 : 0) + " furniture=" + (Options.DisableFurnitureCollision.Value ? 1 : 0)
-            + " triggerEmployees=" + _changedColliders.Count + " agents=" + _agents.Count + " obstaclesOff=" + _carving.Count
+            + " triggerEmployees=" + _changedColliders.Count + " agents=" + _agents.Count + " avoidanceOff=" + AvoidanceOffCount()
+            + " obstaclesOff=" + _disabled.Count
             + " obstaclesSeen=" + _obstaclesSeen;
 
         public void Tick(float dt)
@@ -96,7 +104,13 @@ namespace ActuallyWorkingEmployees.Features.World
             foreach (Employee e in Rel.Employees())
             {
                 int id = e.GetInstanceID();
-                if (_changedColliders.ContainsKey(id)) continue;   // done once per employee
+                if (_changedColliders.ContainsKey(id))
+                {
+                    // Vanilla turns the flag back on, for example when combat ends (CombatBehaviour.End).
+                    if (_movement.TryGetValue(id, out var held) && held != null && held._obstacleAvoidanceEnabled)
+                        held.SetObstacleAvoidanceEnabled(false);
+                    continue;
+                }
                 var changed = new List<UnityEngine.Collider>();
                 var colliders = e.GetComponentsInChildren<UnityEngine.Collider>(true);
                 for (int i = 0; i < colliders.Length; i++)
@@ -110,11 +124,19 @@ namespace ActuallyWorkingEmployees.Features.World
 
                 var agent = e.GetComponent<NavMeshAgent>();
                 if (agent == null) { Core.WarnOnce("collision:noagent:" + id, Rel.Name(e) + " has no NavMeshAgent; only its colliders were changed."); continue; }
-                _agents[id] = new AgentOriginal { Radius = agent.radius, Priority = agent.avoidancePriority, Avoidance = agent.obstacleAvoidanceType };
+                var movement = e.Movement;
+                _agents[id] = new AgentOriginal
+                {
+                    Radius = agent.radius, Priority = agent.avoidancePriority, Avoidance = agent.obstacleAvoidanceType,
+                    AvoidanceFlag = movement == null || movement._obstacleAvoidanceEnabled,
+                };
                 _agentOwner[id] = agent;
                 if (agent.radius > AgentRadius) agent.radius = AgentRadius;
                 agent.obstacleAvoidanceType = ObstacleAvoidanceType.NoObstacleAvoidance;
                 agent.avoidancePriority = 0;
+                if (movement == null) { Core.WarnOnce("collision:nomovement:" + id, Rel.Name(e) + " has no NPCMovement; obstacle avoidance comes back when a player is near."); continue; }
+                _movement[id] = movement;
+                movement.SetObstacleAvoidanceEnabled(false);
             }
         }
 
@@ -132,11 +154,23 @@ namespace ActuallyWorkingEmployees.Features.World
                 agent.radius = kv.Value.Radius;
                 agent.avoidancePriority = kv.Value.Priority;
                 agent.obstacleAvoidanceType = kv.Value.Avoidance;
+                // Last: with the flag back on, vanilla picks the avoidance type from the player distance again.
+                if (_movement.TryGetValue(kv.Key, out var movement) && movement != null)
+                    movement.SetObstacleAvoidanceEnabled(kv.Value.AvoidanceFlag);
             }
             Core.Log?.Msg("[collision] employee collision restored on " + _changedColliders.Count + " employee(s), " + restored + " collider(s).");
             _changedColliders.Clear();
             _agents.Clear();
             _agentOwner.Clear();
+            _movement.Clear();
+        }
+
+        private int AvoidanceOffCount()
+        {
+            int n = 0;
+            foreach (var kv in _movement)
+                if (kv.Value != null && !kv.Value._obstacleAvoidanceEnabled) n++;
+            return n;
         }
 
         private void FurniturePassNow(bool on, float now)
@@ -144,10 +178,11 @@ namespace ActuallyWorkingEmployees.Features.World
             if (!on)
             {
                 int back = 0;
-                for (int i = 0; i < _carving.Count; i++)
-                    if (_carving[i] != null) { _carving[i].carving = true; back++; }
-                Core.Log?.Msg("[collision] furniture carving restored on " + back + " obstacle(s).");
-                _carving.Clear();
+                for (int i = 0; i < _disabled.Count; i++)
+                    if (_disabled[i] != null) { _disabled[i].enabled = true; back++; }
+                Core.Log?.Msg("[collision] furniture obstacles restored on " + back + " obstacle(s).");
+                if (back > 0) ObstaclesChanged("furniture obstacles are back");
+                _disabled.Clear();
                 _scannedItems.Clear();
                 _lastItemCount = -1;
                 _furnWas = false;
@@ -160,10 +195,23 @@ namespace ActuallyWorkingEmployees.Features.World
             if (total == _lastItemCount && now < _nextRescan) return;   // nothing placed or removed since the last scan
             _lastItemCount = total;
             _nextRescan = now + FurnitureRescan;
-            int before = _carving.Count;
+            int before = _disabled.Count;
             ScanSources();
-            if (_carving.Count != before)
-                Core.Log?.Msg("[collision] " + (_carving.Count - before) + " more obstacle(s) stopped carving (" + _carving.Count + " in total, " + _obstaclesSeen + " found).");
+            if (_disabled.Count != before)
+            {
+                Core.Log?.Msg("[collision] " + (_disabled.Count - before) + " more obstacle(s) switched off (" + _disabled.Count + " in total, " + _obstaclesSeen + " found).");
+                ObstaclesChanged("furniture obstacles were switched off");
+            }
+        }
+
+        // Both caches hold answers from before the change: the game's NavMesh sample cache keeps snapped positions until
+        // the next load (NavMeshUtility.SamplePosition), and the reachability cache keeps results for some seconds.
+        private static void ObstaclesChanged(string why)
+        {
+            int samples = Il2CppScheduleOne.DevUtilities.NavMeshUtility.sampleCacheKeys?.Count ?? 0;
+            Il2CppScheduleOne.DevUtilities.NavMeshUtility.ClearCache();
+            Core.Log?.Msg("[collision] " + samples + " cached NavMesh sample(s) dropped: " + why + ".");
+            Fix6ReachCache.Forget(why);
         }
 
         private static int CountItems()
@@ -201,9 +249,9 @@ namespace ActuallyWorkingEmployees.Features.World
                     var o = obstacles[k];
                     if (o == null) continue;
                     _obstaclesSeen++;
-                    if (!o.carving) continue;
-                    o.carving = false;
-                    _carving.Add(o);
+                    if (!o.enabled) continue;   // already off, for example on a build preview; left as it is
+                    o.enabled = false;
+                    _disabled.Add(o);
                 }
             }
         }

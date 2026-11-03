@@ -115,6 +115,14 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         /// <summary>Per-call state from prefix to postfix and finalizer. Entered: this call holds the re-entry guard. HasKey: Key is the miss to store.</summary>
         internal struct Call { internal bool Entered; internal bool HasKey; internal Key Key; }
 
+        /// <summary>Drops every cached answer, for example after obstacles were switched on or off and old results no longer hold.</summary>
+        internal static void Forget(string why)
+        {
+            if (_cache.Count == 0) return;
+            Core.Log?.Msg("[Fix6] " + _cache.Count + " cached path check(s) dropped: " + why + ".");
+            _cache.Clear();
+        }
+
         internal static long Target(Vector3 v) { return Quantize(v); }
         internal static long Target(ITransitEntity e) { return e == null ? 0 : e.Pointer.ToInt64(); }
 

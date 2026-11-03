@@ -68,24 +68,26 @@ $rows.Add((New-Row 'idle-points-share' -Finally 'awe reset property.shareidlepoi
     Step-Set 'property.shareidlepoints' 'true' 'On' 'On')))
 
 # -- collision switches: 'awe collision' runs both passes at once and prints the feature line --
-$colStat = 'employees=\d furniture=\d triggerEmployees=\d+ agents=\d+ obstaclesOff=\d+ obstaclesSeen=\d+'
+$colStat = 'employees=\d furniture=\d triggerEmployees=\d+ agents=\d+ avoidanceOff=\d+ obstaclesOff=\d+ obstaclesSeen=\d+'
 $rows.Add((New-Row 'collision-employees' -Finally 'awe reset general.disableemployeecollision', 'awe collision' -Steps @(
     Step-Feature 'collision' $colStat
     Step-Set 'general.disableemployeecollision' 'true' 'On' 'Off'
-    Step-Dev 'awe collision' 'Collision' 'employees=1 furniture=\d triggerEmployees=\d+ agents=\d+ obstaclesOff=\d+ obstaclesSeen=\d+' -Check {
+    Step-Dev 'awe collision' 'Collision' 'employees=1 furniture=\d triggerEmployees=\d+ agents=\d+ avoidanceOff=\d+ obstaclesOff=\d+ obstaclesSeen=\d+' -Check {
         param($r, $texts)
         # With employees in the save, the pass has changed their colliders and agents; without any, nothing can be counted.
-        $l = $texts | Where-Object { $_ -match 'triggerEmployees=(\d+) agents=(\d+)' } | Select-Object -Last 1
-        [void]($l -match 'triggerEmployees=(\d+) agents=(\d+)')
+        # Every changed agent must also have NPCMovement's own avoidance flag off, or a near player brings avoidance back.
+        $l = $texts | Where-Object { $_ -match 'triggerEmployees=(\d+) agents=(\d+) avoidanceOff=(\d+)' } | Select-Object -Last 1
+        [void]($l -match 'triggerEmployees=(\d+) agents=(\d+) avoidanceOff=(\d+)')
         if ([int]$Matches[1] -lt 1) { Write-Host '  NOTE collision-employees: no employee in the save, nothing was changed' }
         elseif ([int]$Matches[2] -lt 1) { return "employee colliders changed but no NavMeshAgent was found: $l" }
+        elseif ([int]$Matches[3] -lt [int]$Matches[2]) { return "obstacle avoidance still on for some employees: $l" }
     }
     Step-Set 'general.disableemployeecollision' 'false' 'Off' 'Off'
-    Step-Dev 'awe collision' 'Collision' 'employees=0 furniture=\d triggerEmployees=0 agents=0 ' -Also '\[collision\] employee collision restored on \d+ employee\(s\)')))
+    Step-Dev 'awe collision' 'Collision' 'employees=0 furniture=\d triggerEmployees=0 agents=0 avoidanceOff=0 ' -Also '\[collision\] employee collision restored on \d+ employee\(s\)')))
 
 $rows.Add((New-Row 'collision-furniture' -Finally 'awe reset general.disablefurniturecollision', 'awe collision' -Steps @(
     Step-Set 'general.disablefurniturecollision' 'true' 'On' 'Off'
-    Step-Dev 'awe collision' 'Collision' 'employees=\d furniture=1 triggerEmployees=\d+ agents=\d+ obstaclesOff=\d+ obstaclesSeen=\d+' -Check {
+    Step-Dev 'awe collision' 'Collision' 'employees=\d furniture=1 triggerEmployees=\d+ agents=\d+ avoidanceOff=\d+ obstaclesOff=\d+ obstaclesSeen=\d+' -Check {
         param($r, $texts)
         $l = $texts | Where-Object { $_ -match 'obstaclesSeen=(\d+)' } | Select-Object -Last 1
         [void]($l -match 'obstaclesOff=(\d+) obstaclesSeen=(\d+)')
@@ -93,4 +95,4 @@ $rows.Add((New-Row 'collision-furniture' -Finally 'awe reset general.disablefurn
         elseif ([int]$Matches[1] -gt [int]$Matches[2]) { return "more obstacles switched off than found: $l" }
     }
     Step-Set 'general.disablefurniturecollision' 'false' 'Off' 'Off'
-    Step-Dev 'awe collision' 'Collision' 'employees=\d furniture=0 triggerEmployees=\d+ agents=\d+ obstaclesOff=0 ' -Also '\[collision\] furniture carving restored on \d+ obstacle\(s\)')))
+    Step-Dev 'awe collision' 'Collision' 'employees=\d furniture=0 triggerEmployees=\d+ agents=\d+ avoidanceOff=\d+ obstaclesOff=0 ' -Also '\[collision\] furniture obstacles restored on \d+ obstacle\(s\)')))
