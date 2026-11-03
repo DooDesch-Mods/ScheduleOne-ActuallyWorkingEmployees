@@ -36,6 +36,7 @@ namespace ActuallyWorkingEmployees.Debugging
             Register("set", "awe set <key> <value>", Set);
             Register("reset", "awe reset <key|all>", Reset);
             Register("status", "awe status", _ => Status());
+            Register("preset", "awe preset <" + string.Join("|", Presets.All.Keys) + ">", Preset);
         }
 
         /// <summary>Adds <c>awe &lt;sub&gt;</c>. The handler gets the words after the subcommand.</summary>
@@ -146,6 +147,15 @@ namespace ActuallyWorkingEmployees.Debugging
             if (!o.Editable) { Core.Log?.Warning("[Dev] awe reset: the host controls " + o.Key + "."); return; }
             o.ResetToDefault();
             Core.Log?.Msg("[Dev] " + Line(o));
+        }
+
+        private static void Preset(string[] args)
+        {
+            if (args.Length < 1) { Core.Log?.Warning("[Dev] awe preset <" + string.Join("|", Presets.All.Keys) + ">"); return; }
+            Presets.Result r = Presets.Apply(args[0]);
+            if (r.Refused != null) { Core.Log?.Warning("[Dev] awe preset: " + r.Refused); return; }
+            Core.Log?.Msg("[Dev] awe preset " + args[0].ToLowerInvariant() + ": " + r.Changed + " of " + r.Total + " option(s) changed, "
+                + r.Errors.Count + " rejected.");
         }
 
         private static void Status()

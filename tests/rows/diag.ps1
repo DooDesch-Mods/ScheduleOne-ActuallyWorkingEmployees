@@ -64,4 +64,4 @@ $rows.Add((New-Row 'diag-app-state' -Finally @("awe reset $badgeOpt", "awe reset
 #   #diag-analytics  #diag-analytics-reset  #diag-analytics-status  .an-row
 #   #opt-diagnostics-<id>  with .opt-on .opt-off .opt-minus .opt-plus .opt-field .opt-reset
 #   #group-hint (hint above the open group, visible text under .hint, class hidden when empty)  #band  #band-text
-#   #reset-all  #reset-all-confirm  #reset-all-cancel  #reset-group
+#   #reset-all  #reset-all-confirm  #reset-all-cancel  #reset-group  #preset-fast (host and single player only)

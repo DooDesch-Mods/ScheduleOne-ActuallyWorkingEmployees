@@ -400,6 +400,12 @@ function drawBar() {
     end.appendChild(yes);
     end.appendChild(no);
   } else {
+    // The preset writes host-controlled options only, so a client has nothing it could change with it.
+    if (!app.locked) {
+      const f = button('ghost small', 'i-fast', 'Fast', () => doPreset('fast'));
+      f.setAttribute('id', 'preset-fast');
+      end.appendChild(f);
+    }
     const b = button('ghost small', 'i-reset', 'Reset all', () => { app.confirmAll = true; drawBar(); });
     b.setAttribute('id', 'reset-all');
     end.appendChild(b);
@@ -436,6 +442,14 @@ function backToList() { $('screen').className = 'screen on-list'; }
 function doResetAll() {
   const r = call('resetAll');
   if (!r.ok) { say(r.msg || 'Something went wrong.'); drawBar(); return; }
+  say('');
+  apply(r, null);
+}
+
+// Writes the preset's values once; afterwards they are ordinary settings.
+function doPreset(name) {
+  const r = call('preset', { name });
+  if (!r.ok) { say(r.msg || 'Something went wrong.'); return; }
   say('');
   apply(r, null);
 }
