@@ -59,7 +59,7 @@ namespace ActuallyWorkingEmployees.Config
             false, hostOnly: true, balance: true);
 
         public static readonly ChoiceOption RoutePriorityMode = new ChoiceOption("Packager", "RoutePriorityMode",
-            "Route priority", "Which route the packager picks first. Vanilla: the game's order.",
+            "Route priority", "Which ready route the packager picks. Fullest: biggest load. Emptiest: destination with most room. NearestFirst: closest source. Vanilla: the game's order.",
             "Vanilla", new[] { "Vanilla", "Fullest", "Emptiest", "NearestFirst" }, hostOnly: true, balance: true);
 
         public static readonly BoolOption RouteDiagnostics = new BoolOption("Packager", "RouteDiagnostics",

@@ -39,6 +39,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         internal static void Rewrite(Employee emp, ref string reason, ref string fix)
         {
             if (reason != VanillaText) return;   // a specific reason of the game itself
+            if (Packaging.PackagerRoutes.Rewrite(emp, ref reason, ref fix)) return;
             if (!Rel.Gate(FeatureName, Options.ClearReasons.Value)) return;
             if (!Explain(emp, out string newReason, out string newFix)) { _kept++; return; }
             reason = newReason;
