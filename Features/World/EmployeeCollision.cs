@@ -78,6 +78,9 @@ namespace ActuallyWorkingEmployees.Features.World
 
         public void Tick(float dt)
         {
+#if DEBUG
+            DevTrackHips();
+#endif
             float now = UnityEngine.Time.unscaledTime;
             bool emp = Options.DisableEmployeeCollision.Value;
             bool furn = Options.DisableFurnitureCollision.Value;
@@ -258,6 +261,7 @@ namespace ActuallyWorkingEmployees.Features.World
         // The employee "awe collision ragdoll" knocked down, and where it stood, for "awe collision probe".
         private static Employee _ragdolled;
         private static UnityEngine.Vector3 _ragdollStart;
+        private static float _minHipY = float.MaxValue;
 
         private static void Dev(string[] args)
         {
@@ -286,20 +290,37 @@ namespace ActuallyWorkingEmployees.Features.World
             if (target == null) { Core.Log?.Warning("[Dev] [Collision] ragdoll: no standing employee found."); return; }
             _ragdolled = target;
             _ragdollStart = target.transform.position;
+            _minHipY = float.MaxValue;
             UnityEngine.Vector3 dir = target.transform.forward;
             target.Movement.ActivateRagdoll_Server(_ragdollStart + UnityEngine.Vector3.up, dir, 5f);
             Core.Log?.Msg("[Dev] [Collision] ragdoll " + Rel.Name(target) + " at y=" + _ragdollStart.y.ToString("0.00")
                 + " capsuleTrigger=" + (target.Movement._capsuleCollider != null && target.Movement._capsuleCollider.isTrigger));
         }
 
-        /// <summary>Where the knocked-down employee is now: ragdolled or standing, and its height against the start.</summary>
+        /// <summary>Lowest hip height of the knocked-down employee while it lies, sampled every frame. The avatar root does not
+        /// move with the ragdoll; only the bones do, so the hip bone is what falls through a floor.</summary>
+        private static void DevTrackHips()
+        {
+            if (_ragdolled == null) return;
+            var avatar = _ragdolled.Avatar;
+            if (avatar == null || !avatar.Ragdolled || avatar.HipBone == null) return;
+            float y = avatar.HipBone.position.y;
+            if (y < _minHipY) _minHipY = y;
+        }
+
+        /// <summary>Where the knocked-down employee is now. Lying: the hip bone. Standing: the avatar, which vanilla realigns
+        /// to the hips when it gets up. minHipDy is the lowest hip height since the knock, against where it stood.</summary>
         private static void DevProbe()
         {
             if (_ragdolled == null) { Core.Log?.Warning("[Dev] [Collision] probe: run 'awe collision ragdoll' first."); return; }
-            bool down = _ragdolled.Avatar != null && _ragdolled.Avatar.Ragdolled;
-            UnityEngine.Vector3 p = down ? _ragdolled.Avatar.transform.position : _ragdolled.transform.position;
+            var avatar = _ragdolled.Avatar;
+            if (avatar == null) { Core.Log?.Warning("[Dev] [Collision] probe: " + Rel.Name(_ragdolled) + " has no avatar."); return; }
+            bool down = avatar.Ragdolled;
+            UnityEngine.Vector3 p = down && avatar.HipBone != null ? avatar.HipBone.position : avatar.transform.position;
+            string minHip = _minHipY == float.MaxValue ? "none" : (_minHipY - _ragdollStart.y).ToString("0.00");
             Core.Log?.Msg("[Dev] [Collision] probe " + Rel.Name(_ragdolled) + " ragdolled=" + down + " y=" + p.y.ToString("0.00")
-                + " startY=" + _ragdollStart.y.ToString("0.00") + " dy=" + (p.y - _ragdollStart.y).ToString("0.00"));
+                + " startY=" + _ragdollStart.y.ToString("0.00") + " dy=" + (p.y - _ragdollStart.y).ToString("0.00")
+                + " minHipDy=" + minHip);
         }
 #endif
     }

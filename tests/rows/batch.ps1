@@ -100,10 +100,11 @@ $rows.Add((New-Row 'collision-ragdoll' -Finally 'awe reset general.disableemploy
     $deadline = (Get-Date).AddSeconds(30)
     while ((Get-Date) -lt $deadline) {
         $p = Invoke-Awe -Slot $Slot -Cmd 'awe collision probe' -Until '\[Collision\] probe'
-        $last = $p.Texts | Where-Object { $_ -match '\[Collision\] probe .* ragdolled=(\w+) y=\S+ startY=\S+ dy=(-?[\d.]+)' } | Select-Object -Last 1
+        $last = $p.Texts | Where-Object { $_ -match '\[Collision\] probe .* ragdolled=(\w+) y=\S+ startY=\S+ dy=(-?[\d.]+) minHipDy=(\S+)' } | Select-Object -Last 1
         if (-not $last) { return "no probe line: $(($p.Texts | Select-Object -Last 2) -join ' | ')" }
-        $down = $Matches[1] -eq 'True'; $dy = [double]$Matches[2]
-        if ($dy -lt -3) { return "$who fell through the floor: $last" }
+        $down = $Matches[1] -eq 'True'; $dy = [double]$Matches[2]; $minHip = $Matches[3]
+        # A lying body keeps its hips a few cm above the floor; 1 m below where the employee stood is through it.
+        if ($minHip -ne 'none' -and [double]$minHip -lt -1) { return "$who fell through the floor: $last" }
         if ($down) { $wasDown = $true }
         elseif ($wasDown) {
             if ([math]::Abs($dy) -gt 1.5) { return "$who stood up away from the floor: $last" }
