@@ -127,6 +127,12 @@ function rowId(o) { return 'opt-' + String(o.key).replace('.', '-'); }
 function redrawRow(o, rowNode) {
   const parent = rowNode.parentNode;
   if (!parent) return;
+  // A field removed while it has the caret never hands the keyboard back: the game keeps treating every key as
+  // typing, and ESC no longer closes the app. Release the caret before the row with the field goes.
+  const focused = document.activeElement;
+  for (let n = focused; n; n = n.parentNode) {
+    if (n === rowNode) { focused.blur(); break; }
+  }
   parent.replaceChild(buildRow(o), rowNode);
 }
 

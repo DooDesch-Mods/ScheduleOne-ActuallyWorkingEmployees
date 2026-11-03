@@ -54,7 +54,7 @@ namespace ActuallyWorkingEmployees.Host
                 return;
             }
 #if DEBUG
-            DevConsole.Register("app", "awe app <open|dump|diag>", DevCommand);
+            DevConsole.Register("app", "awe app <open|dump|diag|typing>", DevCommand);
 #endif
         }
 
@@ -115,7 +115,14 @@ namespace ActuallyWorkingEmployees.Host
                     + " analytics=" + ((Newtonsoft.Json.Linq.JArray)d["analytics"]["items"]).Count + "/" + (int)d["analytics"]["samples"]
                     + " notice=" + (string.IsNullOrEmpty((string)Calls.BuildState()["notice"]) ? 0 : 1) + ".");
             }
-            else Core.Log?.Warning("[Dev] awe app <open|dump|diag>");
+            else if (sub == "typing")
+            {
+                // GameInput.HandleExitInputs returns on its first line while IsTyping is true, so ESC cannot close the
+                // phone. A field that loses the caret the normal way sets it back to false.
+                Core.Log?.Msg("[Dev] awe app typing: IsTyping=" + Il2CppScheduleOne.GameInput.IsTyping
+                    + ", page " + (_app.IsOpen ? "open" : "closed") + ".");
+            }
+            else Core.Log?.Warning("[Dev] awe app <open|dump|diag|typing>");
         }
 #endif
     }
