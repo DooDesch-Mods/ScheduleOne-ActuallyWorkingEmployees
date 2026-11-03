@@ -158,8 +158,33 @@ $rows.Add((New-Row 'sync-no-failures-in-log' -Run {
     $null
 }))
 
-# Placeholder for sync checks of feature-specific state the lead adds, e.g. a balance option that changes employee behaviour.
-$rows.Add((New-Row 'sync-feature-todo' -Pending))
+# A balance option (fix 7, packager route limit) set on the host reaches the client: published and applied lines, the client's
+# read-only host= value, the decoded key on both sides and equal hashes. The client's balance feature must not apply it itself.
+$rows.Add((New-Row 'sync-feature-balance' -Finally 'awe reset packager.maxroutes' -Run {
+    param($Slot)
+    $key = 'packager.maxroutes'
+    Reset-Both
+    $appliedBefore = Count-CoopLines $ClientSlot "applied the host's options"
+    $publishedBefore = Count-CoopLines $HostSlot 'published'
+    $why = Test-Step -Slot $HostSlot -Step (New-Step -Cmd "awe set $key 7" -Expect ([regex]::Escape($key) + ' = 7\s+\(default 5\)') -Forbid 'Exception')
+    if ($why) { return "host set: $why" }
+    $why = Wait-ClientLine -Key $key -What "the client to show host=7 for $key" -Test ({ param($l) $l -match 'host=7\b' -and $l -match 'read-only' })
+    if ($why) { return $why }
+    if ((Count-CoopLines $HostSlot 'published') -le $publishedBefore) { return "no new '[CoopSync] published' line on the host after setting $key" }
+    if ((Count-CoopLines $ClientSlot "applied the host's options") -le $appliedBefore) { return "no new '[CoopSync] applied the host's options' line on the client after setting $key" }
+    $h = Get-Sync $HostSlot;    if ($h -is [string]) { return $h }
+    $cl = Get-Sync $ClientSlot; if ($cl -is [string]) { return $cl }
+    if ($h.Decoded -notmatch ([regex]::Escape($key) + '=7\b')) { return "host decoded line lacks $key=7: $($h.Decoded)" }
+    if ($cl.Decoded -notmatch ([regex]::Escape($key) + '=7\b')) { return "client decoded line lacks $key=7: $($cl.Decoded)" }
+    if ($h.Hash -ne $cl.Hash) { return "hash differs: host $($h.Hash) client $($cl.Hash)" }
+    if ($h.ReadbackFail -ne 0 -or $cl.ReadbackFail -ne 0) { return "readback_fail host=$($h.ReadbackFail) client=$($cl.ReadbackFail)" }
+    # Balance is applied by the host only: the client writes no route limit.
+    $why = Test-Step -Slot $ClientSlot -Step (New-Step -Cmd 'awe status' -Until '\[Dev\]   fix7-packager-routes: ' -Expect '\[Dev\]   fix7-packager-routes: syncs=\d+ packagers=\d+ writes=0\b' -Forbid 'Exception')
+    if ($why) { return "client fix7 status: $why" }
+    $note = (Get-LogLines -Slot $ClientSlot -Grep '[fix7-packager-routes] not the server').Lines
+    if (-not ($note | Where-Object { $_ -match 'not the server, the host applies balance' })) { return "client log has no '[fix7-packager-routes] not the server, the host applies balance.' line" }
+    $null
+}))
 
 $patterns = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $selected = @($rows | Where-Object {
