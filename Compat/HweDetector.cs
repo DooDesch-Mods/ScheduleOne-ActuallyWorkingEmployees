@@ -5,7 +5,8 @@ namespace ActuallyWorkingEmployees.Compat
 {
     /// <summary>
     /// Finds Harder Working Employees among the loaded mods. Both mods patch the same employee code, so the result is
-    /// a log warning and a line in the app. Nothing is switched off.
+    /// one log warning (when "Warn about Harder Working Employees" is on) and a line in the app. Every fix keeps
+    /// running.
     /// </summary>
     internal static class HweDetector
     {
@@ -24,8 +25,11 @@ namespace ActuallyWorkingEmployees.Compat
 
                     Loaded = true;
                     Found = name + " " + (melon.Info.Version ?? "");
-                    Core.Log?.Warning("[Compat] " + Found.Trim() + " is loaded. Both mods change employees; expect conflicts. "
-                        + "Remove one of them if employees behave oddly.");
+                    if (Config.Options.WarnOnHwe.Value)
+                        Core.Log?.Warning("[Compat] " + Found.Trim() + " is loaded. Both mods change employees; expect conflicts. "
+                            + "Remove one of them if employees behave oddly.");
+                    else
+                        Core.Log?.Msg("[Compat] " + Found.Trim() + " is loaded; the warning is switched off by its option.");
                     return;
                 }
                 Core.Log?.Msg("[Compat] Harder Working Employees is not loaded.");
