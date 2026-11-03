@@ -61,11 +61,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
 
         protected override void PerFrame()
         {
-            foreach (Botanist b in Roster.Botanists)
-            {
-                Botanist e = b;
-                Guarded("work speed " + e.name, () => WorkSpeed.Drive(e, Options.BotanistWorkSpeed.Value, Specs));
-            }
+            DriveAll(Roster.Botanists, Options.BotanistWorkSpeed.Value, Specs);
         }
 
         protected override string Details() => "botanists=" + Roster.Botanists.Count;
@@ -123,11 +119,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
 
         protected override void PerFrame()
         {
-            foreach (Chemist c in Roster.Chemists)
-            {
-                Chemist e = c;
-                Guarded("work speed " + e.name, () => WorkSpeed.Drive(e, Options.ChemistWorkSpeed.Value, Specs));
-            }
+            DriveAll(Roster.Chemists, Options.ChemistWorkSpeed.Value, Specs);
         }
 
         protected override string Details() => "chemists=" + Roster.Chemists.Count;
@@ -189,11 +181,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override void PerFrame()
         {
             float baseSpeed = Options.PackagerWorkSpeed.Value * Options.PackagerPackagingSpeed.Value;
-            foreach (Packager p in Roster.Packagers)
-            {
-                Packager e = p;
-                Guarded("work speed " + e.name, () => WorkSpeed.Drive(e, baseSpeed, Specs));
-            }
+            DriveAll(Roster.Packagers, baseSpeed, Specs);
         }
 
         protected override string Details() => "packagers=" + Roster.Packagers.Count;

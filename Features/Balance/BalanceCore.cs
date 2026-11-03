@@ -164,10 +164,15 @@ namespace ActuallyWorkingEmployees.Features.Balance
     {
         internal const string Label = "AWE.balance";
         private static readonly Dictionary<int, float> _applied = new Dictionary<int, float>();
-        private static readonly Dictionary<string, string> _live = new Dictionary<string, string>();
+        private struct Reading { internal float Want, Base; }
+        private static readonly Dictionary<string, Reading> _live = new Dictionary<string, Reading>();
 
-        /// <summary>Last seconds the stack gave an action, per option key, for the dev command.</summary>
-        internal static string LiveSeconds(string optionKey) => _live.TryGetValue(optionKey, out string s) ? s : "not seen yet";
+        /// <summary>Last seconds the stack gave an action, per option key, for the dev command. Formatted on request, not per frame.</summary>
+        internal static string LiveSeconds(string optionKey)
+        {
+            if (!_live.TryGetValue(optionKey, out Reading r)) return "not seen yet";
+            return (r.Want / Math.Max(r.Base, 0.0001f)).ToString("0.###", CultureInfo.InvariantCulture) + " s at work speed " + r.Base.ToString("0.###", CultureInfo.InvariantCulture);
+        }
 
         internal static void Drive(Employee e, float baseSpeed, Dictionary<Act, ActSpec> specs)
         {
@@ -182,7 +187,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
                 if (Math.Abs(want - spec.VanillaSeconds) > 1e-4f && want > 0f)
                 {
                     factor = baseSpeed * (spec.VanillaSeconds / want);
-                    _live[spec.Option.Key] = (want / Math.Max(baseSpeed, 0.0001f)).ToString("0.###", CultureInfo.InvariantCulture) + " s at work speed " + baseSpeed.ToString("0.###", CultureInfo.InvariantCulture);
+                    _live[spec.Option.Key] = new Reading { Want = want, Base = baseSpeed };
                 }
             }
             Apply(e, factor);
@@ -316,6 +321,20 @@ namespace ActuallyWorkingEmployees.Features.Balance
         }
 
         public string Status => "syncs=" + _syncs + " " + Details();
+
+        /// <summary>
+        /// Per-frame work-speed pass over one employee type. A failure is logged once per employee and does not stop the
+        /// others; no closure or message string is built unless one happens.
+        /// </summary>
+        protected void DriveAll<T>(List<T> employees, float baseSpeed, Dictionary<Act, ActSpec> specs) where T : Employee
+        {
+            for (int i = 0; i < employees.Count; i++)
+            {
+                T e = employees[i];
+                try { WorkSpeed.Drive(e, baseSpeed, specs); }
+                catch (Exception ex) { Core.Failed(Name + ": work speed " + e.name, ex); }
+            }
+        }
 
         /// <summary>Runs one item of a sync; a failure is logged once and does not stop the others.</summary>
         protected void Guarded(string what, Action a)
