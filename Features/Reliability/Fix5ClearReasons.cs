@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using Il2CppScheduleOne.ObjectScripts;
 using ActuallyWorkingEmployees.Config;
@@ -47,15 +48,44 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             Rel.Action("fix5.reason", "[Fix5] " + Rel.Name(emp) + " idle: " + newReason + (newFix.Length > 0 ? " Fix: " + newFix : ""));
         }
 
+        /// <summary>
+        /// Extension point for other features: a provider explains why an employee of a role it knows has no work, or returns
+        /// false to leave the decision to the next provider and the built-in chemist and cleaner reasons.
+        /// </summary>
+        internal delegate bool ReasonProvider(Employee emp, out string reason, out string fix);
+
+        private static readonly List<ReasonProvider> _providers = new List<ReasonProvider>();
+
+        /// <summary>Registers a provider once; call it from the feature's Init.</summary>
+        internal static void AddProvider(ReasonProvider provider)
+        {
+            if (provider == null || _providers.Contains(provider)) return;
+            _providers.Add(provider);
+        }
+
         /// <summary>The first thing that blocks this employee, or false when the role has nothing more specific than vanilla.</summary>
         internal static bool Explain(Employee emp, out string reason, out string fix)
         {
             reason = ""; fix = "";
+            for (int i = 0; i < _providers.Count; i++)
+            {
+                try { if (_providers[i](emp, out reason, out fix)) return true; }
+                catch (Exception e) { Core.Caught("fix5: reason provider " + i, e); reason = ""; fix = ""; }
+            }
             Chemist chemist = emp.TryCast<Chemist>();
             if (chemist != null) return ExplainChemist(chemist, out reason, out fix);
             Cleaner cleaner = emp.TryCast<Cleaner>();
             if (cleaner != null) return ExplainCleaner(cleaner, out reason, out fix);
             return false;
+        }
+
+        /// <summary>True when somebody other than <paramref name="self"/> uses the station; the employee's own use is not a blocker.</summary>
+        private static bool UsedByOther(Il2CppScheduleOne.Management.IUsable usable, NPC self)
+        {
+            if (usable == null || !usable.IsInUse) return false;
+            var npcUser = usable.NPCUserObject;
+            var mine = self.NetworkObject;
+            return !(npcUser != null && mine != null && npcUser.Pointer == mine.Pointer && usable.PlayerUserObject == null);
         }
 
         private static bool ExplainChemist(Chemist c, out string reason, out string fix)
@@ -65,11 +95,26 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             if (cfg == null) { Rel.MsgOnce("fix5:nocfg:" + c.GetInstanceID(), "[" + FeatureName + "] " + Rel.Name(c) + " has no configuration."); return false; }
 
             // Same order as Chemist.TryStartNewTask: ovens, chemistry stations, cauldrons, mixing stations.
+            var ovens = cfg.LabOvens;
+            if (ovens != null)
+            {
+                for (int i = 0; i < ovens.Count; i++)
+                {
+                    var o = ovens[i];
+                    if (o == null) continue;
+                    if (UsedByOther(o.TryCast<Il2CppScheduleOne.Management.IUsable>(), c)) { reason = "A lab oven is in use."; return true; }
+                    if (o.CurrentOperation != null)
+                    {
+                        if (!o.IsReadyForHarvest()) { reason = "A lab oven is still cooking."; return true; }
+                        if (!o.CanOutputSpaceFitCurrentOperation()) { reason = "A lab oven's output is full."; fix = "Empty the oven's output."; return true; }
+                    }
+                    else if (!o.IsReadyToStart()) { reason = "A lab oven is missing ingredients."; fix = "Fill the oven's input."; return true; }
+                }
+            }
             foreach (var s in cfg.ChemStations)
             {
                 if (s == null) continue;
-                var usable = s.TryCast<Il2CppScheduleOne.Management.IUsable>();
-                if (usable != null && usable.IsInUse) { reason = "A chemistry station is in use."; return true; }
+                if (UsedByOther(s.TryCast<Il2CppScheduleOne.Management.IUsable>(), c)) { reason = "A chemistry station is in use."; return true; }
                 if (s.CurrentCookOperation != null) { reason = "A chemistry station is still cooking."; return true; }
                 var recipe = (s.Configuration?.TryCast<Il2CppScheduleOne.Management.ChemistryStationConfiguration>())?.Recipe?.SelectedRecipe;
                 if (recipe == null) { reason = "A chemistry station has no recipe."; fix = "Pick a recipe in the station's settings."; return true; }

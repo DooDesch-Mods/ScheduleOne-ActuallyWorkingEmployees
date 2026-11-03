@@ -28,7 +28,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
 
         private static readonly Dictionary<int, Still> _still = new Dictionary<int, Still>();
         private static readonly Dictionary<int, int> _partial = new Dictionary<int, int>();
-        private static int _checks, _warps, _gaveUp, _partialWarps, _partialsCounted;
+        private static int _checks, _warps, _gaveUp, _partialWarps, _partialsCounted, _refused;
         private float _next;
 
         public void Init()
@@ -48,7 +48,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         public string Status =>
             "on=" + (Options.FixStandstill.Value ? 1 : 0) + (Options.FixPartialWalkLoop.Value ? 1 : 0)
             + " checks=" + _checks + " warps=" + _warps + " gaveup=" + _gaveUp
-            + " partial=" + _partialsCounted + " partialwarps=" + _partialWarps;
+            + " partial=" + _partialsCounted + " partialwarps=" + _partialWarps + " refused=" + _refused;
 
         public void Tick(float dt)
         {
@@ -56,12 +56,16 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             _next = Time.time + 0.5f;
             if (!Rel.Gate(FeatureName, Options.FixStandstill.Value)) return;
 
-            foreach (Employee emp in Rel.Employees())
+            Rel.EmployeesInto(_employees);
+            for (int i = 0; i < _employees.Count; i++)
             {
+                Employee emp = _employees[i];
                 try { Check(emp); }
                 catch (Exception e) { Core.Caught("fix1: check " + Rel.Name(emp), e); }
             }
         }
+
+        private static readonly List<Employee> _employees = new List<Employee>();
 
         private static void Check(Employee emp)
         {
@@ -76,8 +80,9 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             Vector3 dest = emp.Movement.CurrentDestination;
             Vector3 here = emp.transform.position;
             float dist = Vector3.Distance(here, dest);
-            // No destination (zero) or already there: the employee is working in place.
-            if (dest == Vector3.zero || dist <= Rel.FarFromTarget) { _still.Remove(id); return; }
+            // No live destination (the flag is cleared when a walk ends) or already there: the employee is working in place.
+            // A destination left over from an earlier walk is never warped to.
+            if (!emp.Movement._hasDestination || dest == Vector3.zero || dist <= Rel.FarFromTarget) { _still.Remove(id); return; }
 
             _checks++;
             if (!_still.TryGetValue(id, out Still s))
@@ -107,15 +112,25 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             s.Since = Time.time;
         }
 
-        /// <summary>Moves the employee to the NavMesh point nearest <paramref name="dest"/> and logs one line.</summary>
-        private static void Warp(Employee emp, Vector3 dest, string why, bool dev)
+        /// <summary>
+        /// Moves the employee to the NavMesh point nearest <paramref name="dest"/> and logs one line. Without a NavMesh
+        /// point within 5 m the employee stays where it is and a warning says so.
+        /// </summary>
+        private static bool Warp(Employee emp, Vector3 dest, string why, bool dev)
         {
+            if (!Rel.TryOnNavMesh(dest, out Vector3 target))
+            {
+                _refused++;
+                Core.Log?.Warning("[Fix1] did not warp " + Rel.Name(emp) + " (" + why + "): no NavMesh within 5 m of its destination " + dest + ".");
+                return false;
+            }
             Vector3 before = emp.transform.position;
-            emp.Movement.Warp(Rel.OnNavMesh(dest));
+            emp.Movement.Warp(target);
             _warps++;
             string line = "[Fix1] warped " + Rel.Name(emp) + " to its destination (" + why + "), was " + Vector3.Distance(before, dest).ToString("F1")
                 + " m away, now " + Vector3.Distance(emp.transform.position, dest).ToString("F1") + " m.";
             if (dev) Core.Log?.Msg(line); else Rel.Action("fix1.warp", line);
+            return true;
         }
 
         /// <summary>
@@ -145,14 +160,14 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             if (count >= limit || force)
             {
                 _partial.Remove(id);
-                b.consecutivePathingFailures = 0;
-                _partialWarps++;
-                Warp(emp, dest, "partial walk x" + count, force);
+                if (Warp(emp, dest, "partial walk x" + count, force)) _partialWarps++;
                 return;
             }
             _partial[id] = count;
-            // Capped below vanilla's own limit of five so the vanilla warp cannot fire before ours.
-            b.consecutivePathingFailures = Math.Min(count, 4);
+            // Raised towards vanilla's limit of five (never to it, so the vanilla warp cannot fire before ours) and never
+            // lowered: a higher value is the game's own failure count.
+            int shown = Math.Min(count, 4);
+            if (b.consecutivePathingFailures < shown) b.consecutivePathingFailures = shown;
         }
 
 #if DEBUG

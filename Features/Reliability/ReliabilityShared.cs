@@ -48,10 +48,24 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         /// </summary>
         internal static bool Gate(string feature, bool optionOn)
         {
-            if (!optionOn) { MsgOnce(feature + ":off", "[" + feature + "] switched off by its option."); return false; }
-            if (!Net.IsServer) { MsgOnce(feature + ":client", "[" + feature + "] not the host, vanilla behaviour on this client."); return false; }
-            return true;
+            if (optionOn && Net.IsServer) return true;
+            // Refusals are the steady state of a disabled fix and are asked on hot paths: the log keys are built once per feature.
+            if (!_gateKeys.TryGetValue(feature, out GateKeys keys))
+            {
+                keys = new GateKeys
+                {
+                    OffKey = feature + ":off", OffMsg = "[" + feature + "] switched off by its option.",
+                    ClientKey = feature + ":client", ClientMsg = "[" + feature + "] not the host, vanilla behaviour on this client.",
+                };
+                _gateKeys[feature] = keys;
+            }
+            if (!optionOn) { MsgOnce(keys.OffKey, keys.OffMsg); return false; }
+            MsgOnce(keys.ClientKey, keys.ClientMsg);
+            return false;
         }
+
+        private sealed class GateKeys { internal string OffKey, OffMsg, ClientKey, ClientMsg; }
+        private static readonly Dictionary<string, GateKeys> _gateKeys = new Dictionary<string, GateKeys>();
 
         /// <summary>
         /// Writes one fix action line on the first and every 20th occurrence of <paramref name="key"/>, when
@@ -68,6 +82,9 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         }
 
         internal static void ResetActionCounts() { _counts.Clear(); }
+
+        /// <summary>Forgets the log-once keys and the action counts, so a new save logs its first occurrences again.</summary>
+        internal static void ResetOnceKeys() { _said.Clear(); _counts.Clear(); }
 
         [ThreadStatic] private static HashSet<string> _inside;
 
@@ -90,26 +107,41 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         internal static List<Employee> Employees()
         {
             var list = new List<Employee>();
-            EmployeeManager mgr = NetworkSingleton<EmployeeManager>.Instance;
-            if (mgr == null) { MsgOnce("rel:nomgr", "[Reliability] EmployeeManager does not exist yet, no employees to look at."); return list; }
-            var all = mgr.AllEmployees;
-            if (all == null) { MsgOnce("rel:nolist", "[Reliability] EmployeeManager.AllEmployees is null."); return list; }
-            for (int i = 0; i < all.Count; i++)
-            {
-                Employee e = all[i];
-                if (e != null) list.Add(e);
-            }
+            EmployeesInto(list);
             return list;
         }
 
-        /// <summary>IL2CPP class name of the object's real type, e.g. "MoveItemBehaviour".</summary>
+        /// <summary>
+        /// Clears <paramref name="into"/> and fills it with the employees the manager knows. Per-tick callers keep one list
+        /// and pass it here, so the scan allocates nothing.
+        /// </summary>
+        internal static void EmployeesInto(List<Employee> into)
+        {
+            into.Clear();
+            EmployeeManager mgr = NetworkSingleton<EmployeeManager>.Instance;
+            if (mgr == null) { MsgOnce("rel:nomgr", "[Reliability] EmployeeManager does not exist yet, no employees to look at."); return; }
+            var all = mgr.AllEmployees;
+            if (all == null) { MsgOnce("rel:nolist", "[Reliability] EmployeeManager.AllEmployees is null."); return; }
+            for (int i = 0; i < all.Count; i++)
+            {
+                Employee e = all[i];
+                if (e != null) into.Add(e);
+            }
+        }
+
+        private static readonly Dictionary<IntPtr, string> _typeNames = new Dictionary<IntPtr, string>();
+
+        /// <summary>IL2CPP class name of the object's real type, e.g. "MoveItemBehaviour". Cached per class.</summary>
         internal static string TypeName(Il2CppObjectBase obj)
         {
             if (obj == null) return "null";
             try
             {
                 IntPtr klass = IL2CPP.il2cpp_object_get_class(obj.Pointer);
-                return Marshal.PtrToStringAnsi(IL2CPP.il2cpp_class_get_name(klass)) ?? "?";
+                if (_typeNames.TryGetValue(klass, out string cached)) return cached;
+                string name = Marshal.PtrToStringAnsi(IL2CPP.il2cpp_class_get_name(klass)) ?? "?";
+                _typeNames[klass] = name;
+                return name;
             }
             catch (Exception e)
             {
@@ -124,11 +156,31 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             return b != null && WorkBehaviours.Contains(TypeName(b));
         }
 
-        /// <summary>Nearest NavMesh point to <paramref name="p"/> within 5 m; the point itself when there is none.</summary>
-        internal static Vector3 OnNavMesh(Vector3 p)
+        /// <summary>
+        /// Nearest NavMesh point to <paramref name="p"/> within 5 m. False when there is none: a warp to a point off the
+        /// NavMesh would strand the employee, so the caller refuses it.
+        /// </summary>
+        internal static bool TryOnNavMesh(Vector3 p, out Vector3 snapped)
         {
-            return UnityEngine.AI.NavMesh.SamplePosition(p, out UnityEngine.AI.NavMeshHit hit, 5f, UnityEngine.AI.NavMesh.AllAreas)
-                ? hit.position : p;
+            if (UnityEngine.AI.NavMesh.SamplePosition(p, out UnityEngine.AI.NavMeshHit hit, 5f, UnityEngine.AI.NavMesh.AllAreas))
+            {
+                snapped = hit.position;
+                return true;
+            }
+            snapped = p;
+            return false;
+        }
+
+        /// <summary>
+        /// True when the interop wrapper is null, points to nothing, or wraps a Unity object the engine already destroyed.
+        /// A plain null check does not see the last case: the managed wrapper outlives the native object.
+        /// </summary>
+        internal static bool IsGone(Il2CppObjectBase o)
+        {
+            if (o == null || o.Pointer == IntPtr.Zero) return true;
+            UnityEngine.Object u = o.TryCast<UnityEngine.Object>();
+            if (ReferenceEquals(u, null)) return false;   // not a Unity object: nothing to compare against
+            return u == null;                              // Unity's overloaded comparison is true for a destroyed object
         }
 
         internal static string Name(NPC npc) { return npc == null ? "?" : npc.FullName; }
