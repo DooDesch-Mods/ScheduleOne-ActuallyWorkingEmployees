@@ -118,9 +118,10 @@ export function call(name, arg) {
     case 'preset': {
       if (a.name !== 'fast') return JSON.stringify({ ok: false, msg: 'Something went wrong.' });
       if (client()) return JSON.stringify({ ok: false, msg: 'Set by the host.' });
-      const keys = ['botanist.workspeed', 'chemist.workspeed', 'packager.workspeed', 'cleaner.workspeed'];
+      const values = {};
+      for (const r of ['botanist', 'chemist', 'packager', 'cleaner']) { values[r + '.workspeed'] = '2'; values[r + '.walkspeed'] = '6'; }
       let n = 0;
-      for (const k of keys) { const o = find(k); if (o && o.value !== '2') { o.value = '2'; n++; } }
+      for (const k in values) { const o = find(k); if (o && o.value !== values[k]) { o.value = values[k]; n++; } }
       return JSON.stringify({ ...state(), changed: n });
     }
     default:

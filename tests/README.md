@@ -60,7 +60,7 @@ takes a free-form body that returns `$null` or a reason. Replace a placeholder b
 | `list-bad-group`, `console-errors`, `key-ignores-case` | unknown group/key/subcommand and missing arguments warn instead of failing silently; keys ignore case |
 | `opt-bool`, `opt-int`, `opt-int-vanilla`, `opt-float`, `opt-choice` | get/set/reset round trip per type; out-of-range, wrong-type and bad-choice values are rejected and leave the value; boundary values and the -1 vanilla sentinel are accepted; aliases (`on/off/yes`, `vanilla`, any choice case) work |
 | `reset-all` | `awe reset all` resets what was changed and `awe status` then shows `changed=0` |
-| `preset-fast` | `awe preset fast` sets the four work speeds to 2 and leaves walk speed and wage at vanilla; a second run changes nothing; an unknown preset warns; `awe reset all` takes all four back to 1 |
+| `preset-fast` | `awe preset fast` sets the four work speeds to 2 and the four walk speeds to 6 and leaves the wage at vanilla; a second run changes nothing; an unknown preset warns; `awe reset all` takes all eight back to vanilla |
 | `status` | the header's feature count equals the feature lines, the boot log's feature names, and `-ExpectFeatures` |
 | `persist-reload` | a set value survives `save_now`, return to menu, `load_save` and `wait-ready` in the same game |
 | `fix1-todo` .. `fix6-todo`, `fix7-packager-routes`, `fix8-harvest-time`, `bal-todo`, `coop-sync`, `app-todo` | placeholders (SKIP) for the feature checks |

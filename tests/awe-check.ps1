@@ -246,19 +246,19 @@ $rows.Add((New-Row 'reset-all' -Finally 'awe reset all' -Steps @(
     Step-Get 'general.verboselogging' 'Off'
     New-Step -Cmd 'awe status' -Expect 'changed=0\b')))
 
-# -- preset: "Fast" writes work speed x2 for all four roles once; Reset all takes it back --
+# -- preset: "Fast" writes work speed x2 and walk speed 6 for all four roles once; Reset all takes it back --
 $fastKeys = @('botanist.workspeed', 'chemist.workspeed', 'packager.workspeed', 'cleaner.workspeed')
+$fastWalk = @('botanist.walkspeed', 'chemist.walkspeed', 'packager.walkspeed', 'cleaner.walkspeed')
 $rows.Add((New-Row 'preset-fast' -Finally 'awe reset all' -Steps (@(
     New-Step -Cmd 'awe reset all' -Expect 'awe reset all: \d+ option\(s\) reset\.'
-    New-Step -Cmd 'awe preset fast' -Until 'awe preset' -Expect 'awe preset fast: 4 of 4 option\(s\) changed, 0 rejected\.' -Forbid 'Exception'
-) + @($fastKeys | ForEach-Object { Step-Get $_ '2' '1' }) + @(
-    New-Step -Cmd 'awe get botanist.walkspeed' -Expect (Rx-OptAt 'botanist.walkspeed' 'Vanilla')
+    New-Step -Cmd 'awe preset fast' -Until 'awe preset' -Expect 'awe preset fast: 8 of 8 option\(s\) changed, 0 rejected\.' -Forbid 'Exception'
+) + @($fastKeys | ForEach-Object { Step-Get $_ '2' '1' }) + @($fastWalk | ForEach-Object { Step-Get $_ '6' 'Vanilla' }) + @(
     New-Step -Cmd 'awe get botanist.dailywage' -Expect (Rx-OptAt 'botanist.dailywage' 'Vanilla')
-    New-Step -Cmd 'awe preset fast' -Until 'awe preset' -Expect 'awe preset fast: 0 of 4 option\(s\) changed, 0 rejected\.'
+    New-Step -Cmd 'awe preset fast' -Until 'awe preset' -Expect 'awe preset fast: 0 of 8 option\(s\) changed, 0 rejected\.'
     New-Step -Cmd 'awe preset bogus' -Until 'awe preset' -Expect "awe preset: no preset 'bogus'\. Presets: fast"
-    New-Step -Cmd 'awe status' -Expect 'changed=4\b'
-    New-Step -Cmd 'awe reset all' -Expect 'awe reset all: 4 option\(s\) reset\.'
-) + @($fastKeys | ForEach-Object { Step-Get $_ '1' }))))
+    New-Step -Cmd 'awe status' -Expect 'changed=8\b'
+    New-Step -Cmd 'awe reset all' -Expect 'awe reset all: 8 option\(s\) reset\.'
+) + @($fastKeys | ForEach-Object { Step-Get $_ '1' }) + @($fastWalk | ForEach-Object { Step-Get $_ 'Vanilla' }))))
 
 # -- status:every feature the boot log announced is listed with its state --
 $rows.Add((New-Row 'status' -Steps @(

@@ -207,6 +207,10 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         {
             // The warp inside OnWalkResult can end a walk and call back into WalkCallback.
             if (!Rel.Enter("fix1.walkcallback")) return;
+#if DEBUG
+            try { WalkStats.Record(__instance, result); }
+            catch (Exception e) { Core.Caught("walkstats: record", e); }
+#endif
             try { Fix1Standstill.OnWalkResult(__instance, result, false); }
             catch (Exception e) { Core.Failed("fix1: WalkCallback postfix", e); }
             finally { Rel.Leave("fix1.walkcallback"); }

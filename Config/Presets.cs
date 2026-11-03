@@ -14,13 +14,19 @@ namespace ActuallyWorkingEmployees.Config
         internal static readonly IReadOnlyDictionary<string, KeyValuePair<string, string>[]> All =
             new Dictionary<string, KeyValuePair<string, string>[]>(StringComparer.OrdinalIgnoreCase)
             {
-                // Every work action twice as fast. Walk speed, wages and assignment limits stay vanilla.
+                // Every work action twice as fast, and walk speed 6 (vanilla 1.2), the highest value at which
+                // botanists, chemists and packagers still reached every target without overshoot or a Fix 1 warp.
+                // Cleaners get the same walk speed; they were not measured. Wages and assignment limits stay vanilla.
                 ["fast"] = new[]
                 {
                     new KeyValuePair<string, string>("botanist.workspeed", "2"),
                     new KeyValuePair<string, string>("chemist.workspeed", "2"),
                     new KeyValuePair<string, string>("packager.workspeed", "2"),
                     new KeyValuePair<string, string>("cleaner.workspeed", "2"),
+                    new KeyValuePair<string, string>("botanist.walkspeed", "6"),
+                    new KeyValuePair<string, string>("chemist.walkspeed", "6"),
+                    new KeyValuePair<string, string>("packager.walkspeed", "6"),
+                    new KeyValuePair<string, string>("cleaner.walkspeed", "6"),
                 },
             };
 
