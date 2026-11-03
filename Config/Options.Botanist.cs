@@ -43,7 +43,7 @@ namespace ActuallyWorkingEmployees.Config
             1f, 0.1f, 30f, 0.1f, hostOnly: true, balance: true);
 
         public static readonly FloatOption BotanistDryingRackTime = new FloatOption("Botanist", "DryingRackTime",
-            "Drying rack time per item", "Seconds to handle one item at a drying rack. Vanilla: 1.",
+            "Drying rack start time", "Seconds to start a drying rack. Vanilla: 1.",
             1f, 0.1f, 30f, 0.1f, hostOnly: true, balance: true);
 
         public static readonly FloatOption BotanistMushroomBedTime = new FloatOption("Botanist", "MushroomBedTime",
@@ -65,9 +65,5 @@ namespace ActuallyWorkingEmployees.Config
         public static readonly FloatOption BotanistWaterLevel = new FloatOption("Botanist", "WaterLevel",
             "Water level", "Moisture below which a pot is watered. Vanilla: 0.3.",
             0.3f, 0.05f, 1f, 0.05f, hostOnly: true, balance: true);
-
-        public static readonly BoolOption BotanistUseSprinklers = new BoolOption("Botanist", "UseSprinklers",
-            "Skip sprinkler pots", "The botanist waters only pots a sprinkler does not cover. Vanilla: off.",
-            false, hostOnly: true, balance: true);
     }
 }

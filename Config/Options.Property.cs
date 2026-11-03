@@ -7,8 +7,8 @@ namespace ActuallyWorkingEmployees.Config
             false, hostOnly: true, balance: true);
 
         public static readonly IntOption EmployeeCapacity = new IntOption("Property", "EmployeeCapacity",
-            "Employees per property", "Employees a property can hold while the override is on. Vanilla: 10.",
-            10, 10, 30, 1, hostOnly: true, balance: true);
+            "Employees per property", "Employees a property can hold while the override is on. 0 = each property's own value.",
+            0, 0, 30, 1, hostOnly: true, balance: true);
 
         public static readonly BoolOption ShareIdlePoints = new BoolOption("Property", "ShareIdlePoints",
             "Share idle spots", "Extra employees share idle spots when there are fewer spots than employees.",
