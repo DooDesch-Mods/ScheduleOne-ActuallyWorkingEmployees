@@ -34,31 +34,54 @@ namespace ActuallyWorkingEmployees.Features.Balance
         }
     }
 
+    /// <summary>The field a vanilla value is remembered for.</summary>
+    internal enum VSlot { Walk, Wage, Fee, Max, Routes, Capacity, Grow, Cook, Time, PackagingSpeed }
+
     /// <summary>
     /// The game's own value of every runtime-changed field, read the first time the object is seen. An option that goes
-    /// back to its default writes this value back, so vanilla never has to be hard-coded. Entries are kept across saves:
-    /// prefabs outlive them and would otherwise be captured a second time in their changed state.
+    /// back to its default writes this value back, so vanilla never has to be hard-coded.
+    /// Scene objects are remembered per save and dropped by <see cref="Clear"/>. Prefabs outlive a save and would be
+    /// captured a second time in their changed state, so their values live in a second table that is never cleared.
     /// </summary>
     internal static class Vanilla
     {
-        private static readonly Dictionary<string, float> _values = new Dictionary<string, float>();
-
-        internal static float Of(UnityEngine.Object owner, string slot, float live)
+        private readonly struct Key : IEquatable<Key>
         {
-            string key = owner.GetInstanceID() + ":" + slot;
+            private readonly int _id;
+            private readonly VSlot _slot;
+            internal Key(int id, VSlot slot) { _id = id; _slot = slot; }
+            public bool Equals(Key o) => _id == o._id && _slot == o._slot;
+            public override bool Equals(object o) => o is Key k && Equals(k);
+            public override int GetHashCode() => _id * 31 + (int)_slot;
+        }
+
+        private static readonly Dictionary<Key, float> _values = new Dictionary<Key, float>();
+        private static readonly Dictionary<Key, float> _prefabValues = new Dictionary<Key, float>();
+
+        internal static float Of(UnityEngine.Object owner, VSlot slot, float live)
+        {
+            var key = new Key(owner.GetInstanceID(), slot);
             if (!_values.TryGetValue(key, out float v)) { v = live; _values[key] = v; }
             return v;
         }
 
-        internal static int Of(UnityEngine.Object owner, string slot, int live) => (int)Of(owner, slot, (float)live);
+        internal static int Of(UnityEngine.Object owner, VSlot slot, int live) => (int)Of(owner, slot, (float)live);
 
-        internal static float Want(UnityEngine.Object owner, string slot, float live, bool active, float desired)
+        /// <summary>The value of a prefab, captured on first sight and kept across saves. Call before the prefab is first written.</summary>
+        internal static float OfPrefab(UnityEngine.Object prefab, VSlot slot, float live)
+        {
+            var key = new Key(prefab.GetInstanceID(), slot);
+            if (!_prefabValues.TryGetValue(key, out float v)) { v = live; _prefabValues[key] = v; }
+            return v;
+        }
+
+        internal static float Want(UnityEngine.Object owner, VSlot slot, float live, bool active, float desired)
         {
             float van = Of(owner, slot, live);
             return active ? desired : van;
         }
 
-        internal static int Want(UnityEngine.Object owner, string slot, int live, bool active, int desired)
+        internal static int Want(UnityEngine.Object owner, VSlot slot, int live, bool active, int desired)
         {
             int van = Of(owner, slot, live);
             return active ? desired : van;
@@ -66,6 +89,9 @@ namespace ActuallyWorkingEmployees.Features.Balance
 
         internal static bool Active(FloatOption o) => Math.Abs(o.Value - o.Default) > 1e-4f;
         internal static bool Active(IntOption o) => o.Value != o.Default;
+
+        /// <summary>Forgets the scene objects of the save that ended. Prefab values stay.</summary>
+        internal static void Clear() { _values.Clear(); }
     }
 
     /// <summary>Typed snapshots of the hired employees, rebuilt twice a second.</summary>
@@ -143,6 +169,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
             return Act.None;
         }
 
+        /// <summary>Behaviours of the save that ended are gone and their native addresses may be reused.</summary>
         internal static void Clear() { _cache.Clear(); }
     }
 
@@ -187,7 +214,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
                 if (Math.Abs(want - spec.VanillaSeconds) > 1e-4f && want > 0f)
                 {
                     factor = baseSpeed * (spec.VanillaSeconds / want);
-                    _live[spec.Option.Key] = new Reading { Want = want, Base = baseSpeed };
+                    Note(spec.Option.Key, want, baseSpeed);
                 }
             }
             Apply(e, factor);
@@ -211,6 +238,12 @@ namespace ActuallyWorkingEmployees.Features.Balance
 
         /// <summary>The entry value currently applied to an employee, or 1.</summary>
         internal static float AppliedFactor(Employee e) => _applied.TryGetValue(e.GetInstanceID(), out float f) ? f : 1f;
+
+        /// <summary>Records the seconds an action was given, for the dev command.</summary>
+        internal static void Note(string optionKey, float seconds, float baseSpeed)
+        {
+            _live[optionKey] = new Reading { Want = seconds, Base = baseSpeed };
+        }
 
         internal static void Clear() { _applied.Clear(); _live.Clear(); }
     }
@@ -313,10 +346,19 @@ namespace ActuallyWorkingEmployees.Features.Balance
             PerFrame();
         }
 
+        /// <summary>
+        /// Drops everything keyed by an object of the save that ended: remembered vanilla values, applied work-speed entries,
+        /// the action kinds cached by native address and the roster. Every feature does it; the calls are idempotent.
+        /// </summary>
         public void Reset()
         {
             _dirty = true;
             _next = 0f;
+            Vanilla.Clear();
+            WorkSpeed.Clear();
+            ActionKinds.Clear();
+            CleanerWaits.Clear();
+            Roster.Clear();
             OnReset();
         }
 
@@ -335,13 +377,6 @@ namespace ActuallyWorkingEmployees.Features.Balance
                 catch (Exception ex) { Core.Failed(Name + ": work speed " + e.name, ex); }
             }
         }
-
-        /// <summary>Runs one item of a sync; a failure is logged once and does not stop the others.</summary>
-        protected void Guarded(string what, Action a)
-        {
-            try { a(); }
-            catch (Exception e) { Core.Failed(Name + ": " + what, e); }
-        }
     }
 
     /// <summary>Settings shared by the four employee types: walking speed, wage and signing fee.</summary>
@@ -353,18 +388,24 @@ namespace ActuallyWorkingEmployees.Features.Balance
             var sc = e.Movement.SpeedController;
             if (sc == null) { Throttle.Warn("balance: speed controller", "Employee " + e.name + " has no SpeedController."); return; }
             float live = sc.DefaultSpeed;
-            float want = Vanilla.Want(e, "walk", live, opt.Value > 0f, opt.Value);
+            float want = Vanilla.Want(e, VSlot.Walk, live, opt.Value > 0f, opt.Value);
             if (Math.Abs(live - want) > 0.001f) sc.SetDefaultSpeed(want);
         }
 
-        internal static void Money(Employee e, IntOption wage, IntOption fee)
+        /// <summary>
+        /// Wage and signing fee of one employee. A new hire copies the prefab, so the prefab's untouched values are the
+        /// vanilla ones for every employee of the type; they are captured before the prefab is first written.
+        /// </summary>
+        internal static void Money(Employee e, Employee prefab, IntOption wage, IntOption fee)
         {
             float liveWage = e.DailyWage;
-            float wantWage = Vanilla.Want(e, "wage", liveWage, wage.Value >= 0, wage.Value);
+            float vanWage = prefab != null ? Vanilla.OfPrefab(prefab, VSlot.Wage, prefab.DailyWage) : Vanilla.Of(e, VSlot.Wage, liveWage);
+            float wantWage = wage.Value >= 0 ? wage.Value : vanWage;
             if (Math.Abs(liveWage - wantWage) > 0.01f) e.DailyWage = wantWage;
             if (fee == null) return;
             float liveFee = e.SigningFee;
-            float wantFee = Vanilla.Want(e, "fee", liveFee, fee.Value >= 0, fee.Value);
+            float vanFee = prefab != null ? Vanilla.OfPrefab(prefab, VSlot.Fee, prefab.SigningFee) : Vanilla.Of(e, VSlot.Fee, liveFee);
+            float wantFee = fee.Value >= 0 ? fee.Value : vanFee;
             if (Math.Abs(liveFee - wantFee) > 0.01f) e.SigningFee = wantFee;
         }
 
@@ -372,14 +413,22 @@ namespace ActuallyWorkingEmployees.Features.Balance
         internal static void Prefab(Employee prefab, string what, IntOption wage, IntOption fee)
         {
             if (prefab == null) { Throttle.Warn("balance: prefab " + what, "EmployeeManager has no " + what + " prefab; wage and fee of new hires stay vanilla."); return; }
-            Money(prefab, wage, fee);
+            Money(prefab, prefab, wage, fee);
         }
 
-        internal static void SetMax(Il2CppScheduleOne.Management.ObjectListField field, UnityEngine.Object owner, string slot, IntOption opt)
+        internal static void SetMax(Il2CppScheduleOne.Management.ObjectListField field, UnityEngine.Object owner, VSlot slot, IntOption opt)
         {
             int live = field.MaxItems;
             int want = Vanilla.Want(owner, slot, live, Vanilla.Active(opt), opt.Value);
             if (live != want) field.MaxItems = want;
+        }
+
+        /// <summary>Wage or fee of the first hire and of the prefab new hires copy, for the dev command.</summary>
+        internal static string LiveMoney(Employee e, Employee prefab, bool fee)
+        {
+            string hired = e != null ? Eff.F(fee ? e.SigningFee : e.DailyWage) : "none";
+            string copy = prefab != null ? Eff.F(fee ? prefab.SigningFee : prefab.DailyWage) : "none";
+            return "employee " + hired + " prefab " + copy;
         }
 
         internal static string LiveWalk(Employee e)

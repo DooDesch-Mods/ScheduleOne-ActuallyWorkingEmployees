@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Il2CppScheduleOne.Management;
 using ActuallyWorkingEmployees.Config;
+using NpcBehaviour = Il2CppScheduleOne.NPCs.Behaviour.Behaviour;
 
 namespace ActuallyWorkingEmployees.Features.Balance
 {
@@ -25,8 +26,8 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override void OnInit()
         {
             Eff.Add(Options.BotanistWalkSpeed, () => CommonEmployee.LiveWalk(First()));
-            Eff.Add(Options.BotanistDailyWage, () => First() != null ? Eff.F(First().DailyWage) : "no botanist");
-            Eff.Add(Options.BotanistSigningFee, () => First() != null ? Eff.F(First().SigningFee) : "no botanist");
+            Eff.Add(Options.BotanistDailyWage, () => CommonEmployee.LiveMoney(First(), NetworkSingleton<EmployeeManager>.Instance?.BotanistPrefab, false));
+            Eff.Add(Options.BotanistSigningFee, () => CommonEmployee.LiveMoney(First(), NetworkSingleton<EmployeeManager>.Instance?.BotanistPrefab, true));
             Eff.Add(Options.BotanistMaxPots, () => First() != null && First().configuration != null ? First().configuration.Assigns.MaxItems.ToString() : "no botanist");
             Eff.Add(Options.BotanistWorkSpeed, () => First() != null ? Eff.F(WorkSpeed.AppliedFactor(First())) : "no botanist");
             Eff.Add(Options.BotanistDryingRackTime, () => WorkSpeed.LiveSeconds(Options.BotanistDryingRackTime.Key));
@@ -45,18 +46,24 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override void Sync()
         {
             EmployeeManager mgr = NetworkSingleton<EmployeeManager>.Instance;
-            if (mgr != null) Guarded("prefab", () => CommonEmployee.Prefab(mgr.BotanistPrefab, "botanist", Options.BotanistDailyWage, Options.BotanistSigningFee));
-            foreach (Botanist b in Roster.Botanists)
+            Botanist prefab = mgr != null ? mgr.BotanistPrefab : null;
+            try { CommonEmployee.Prefab(prefab, "botanist", Options.BotanistDailyWage, Options.BotanistSigningFee); }
+            catch (Exception ex) { Core.Failed(Name + ": prefab", ex); }
+            List<Botanist> list = Roster.Botanists;
+            for (int i = 0; i < list.Count; i++)
             {
-                Botanist e = b;
-                Guarded("employee " + e.name, () =>
-                {
-                    CommonEmployee.Walk(e, Options.BotanistWalkSpeed);
-                    CommonEmployee.Money(e, Options.BotanistDailyWage, Options.BotanistSigningFee);
-                    if (e.configuration == null || e.configuration.Assigns == null) { Throttle.Warn("bal-botanist: config", "Botanist " + e.name + " has no configuration yet."); return; }
-                    CommonEmployee.SetMax(e.configuration.Assigns, e, "max", Options.BotanistMaxPots);
-                });
+                Botanist e = list[i];
+                try { SyncOne(e, prefab); }
+                catch (Exception ex) { Core.Failed(Name + ": employee " + e.name, ex); }
             }
+        }
+
+        private static void SyncOne(Botanist e, Employee prefab)
+        {
+            CommonEmployee.Walk(e, Options.BotanistWalkSpeed);
+            CommonEmployee.Money(e, prefab, Options.BotanistDailyWage, Options.BotanistSigningFee);
+            if (e.configuration == null || e.configuration.Assigns == null) { Throttle.Warn("bal-botanist: config", "Botanist " + e.name + " has no configuration yet."); return; }
+            CommonEmployee.SetMax(e.configuration.Assigns, e, VSlot.Max, Options.BotanistMaxPots);
         }
 
         protected override void PerFrame()
@@ -91,8 +98,8 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override void OnInit()
         {
             Eff.Add(Options.ChemistWalkSpeed, () => CommonEmployee.LiveWalk(First()));
-            Eff.Add(Options.ChemistDailyWage, () => First() != null ? Eff.F(First().DailyWage) : "no chemist");
-            Eff.Add(Options.ChemistSigningFee, () => First() != null ? Eff.F(First().SigningFee) : "no chemist");
+            Eff.Add(Options.ChemistDailyWage, () => CommonEmployee.LiveMoney(First(), NetworkSingleton<EmployeeManager>.Instance?.ChemistPrefab, false));
+            Eff.Add(Options.ChemistSigningFee, () => CommonEmployee.LiveMoney(First(), NetworkSingleton<EmployeeManager>.Instance?.ChemistPrefab, true));
             Eff.Add(Options.ChemistMaxStations, () => First() != null && First().configuration != null ? First().configuration.Stations.MaxItems.ToString() : "no chemist");
             Eff.Add(Options.ChemistWorkSpeed, () => First() != null ? Eff.F(WorkSpeed.AppliedFactor(First())) : "no chemist");
             foreach (ActSpec s in Specs.Values) { FloatOption o = s.Option; Eff.Add(o, () => WorkSpeed.LiveSeconds(o.Key)); }
@@ -103,18 +110,24 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override void Sync()
         {
             EmployeeManager mgr = NetworkSingleton<EmployeeManager>.Instance;
-            if (mgr != null) Guarded("prefab", () => CommonEmployee.Prefab(mgr.ChemistPrefab, "chemist", Options.ChemistDailyWage, Options.ChemistSigningFee));
-            foreach (Chemist c in Roster.Chemists)
+            Chemist prefab = mgr != null ? mgr.ChemistPrefab : null;
+            try { CommonEmployee.Prefab(prefab, "chemist", Options.ChemistDailyWage, Options.ChemistSigningFee); }
+            catch (Exception ex) { Core.Failed(Name + ": prefab", ex); }
+            List<Chemist> list = Roster.Chemists;
+            for (int i = 0; i < list.Count; i++)
             {
-                Chemist e = c;
-                Guarded("employee " + e.name, () =>
-                {
-                    CommonEmployee.Walk(e, Options.ChemistWalkSpeed);
-                    CommonEmployee.Money(e, Options.ChemistDailyWage, Options.ChemistSigningFee);
-                    if (e.configuration == null || e.configuration.Stations == null) { Throttle.Warn("bal-chemist: config", "Chemist " + e.name + " has no configuration yet."); return; }
-                    CommonEmployee.SetMax(e.configuration.Stations, e, "max", Options.ChemistMaxStations);
-                });
+                Chemist e = list[i];
+                try { SyncOne(e, prefab); }
+                catch (Exception ex) { Core.Failed(Name + ": employee " + e.name, ex); }
             }
+        }
+
+        private static void SyncOne(Chemist e, Employee prefab)
+        {
+            CommonEmployee.Walk(e, Options.ChemistWalkSpeed);
+            CommonEmployee.Money(e, prefab, Options.ChemistDailyWage, Options.ChemistSigningFee);
+            if (e.configuration == null || e.configuration.Stations == null) { Throttle.Warn("bal-chemist: config", "Chemist " + e.name + " has no configuration yet."); return; }
+            CommonEmployee.SetMax(e.configuration.Stations, e, VSlot.Max, Options.ChemistMaxStations);
         }
 
         protected override void PerFrame()
@@ -126,8 +139,9 @@ namespace ActuallyWorkingEmployees.Features.Balance
     }
 
     /// <summary>
-    /// Packager: walk speed, wage, fee, station limit, work speed and action times. PackagingSpeed multiplies the
-    /// same work-speed entry as WorkSpeed, so the two options are one factor and never a second one.
+    /// Packager: walk speed, wage, fee, station limit, work speed and action times. The packaging station and the brick
+    /// press divide their literal (5 s and 15 s) by Packager.PackagingSpeedMultiplier, not by the work speed, so
+    /// PackagingSpeed and the two action times drive that field; WorkSpeed stays on the work-speed controller.
     /// The route limit is fix7-packager-routes.
     /// </summary>
     internal sealed class PackagerBalance : BalanceFeature
@@ -136,10 +150,11 @@ namespace ActuallyWorkingEmployees.Features.Balance
 
         private static readonly Dictionary<Act, ActSpec> Specs = new Dictionary<Act, ActSpec>
         {
-            { Act.Packaging, new ActSpec(Options.PackagerPackagingStationTime, 5f) },
-            { Act.BrickPress, new ActSpec(Options.PackagerBrickPressTime, 15f) },
             { Act.MoveItem, new ActSpec(Options.PackagerMoveItemTime, 0.5f) },
         };
+
+        private const float PackagingVanillaSeconds = 5f;
+        private const float BrickPressVanillaSeconds = 15f;
 
         protected override IEnumerable<Option> Watched => new Option[]
         {
@@ -151,11 +166,13 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override void OnInit()
         {
             Eff.Add(Options.PackagerWalkSpeed, () => CommonEmployee.LiveWalk(First()));
-            Eff.Add(Options.PackagerDailyWage, () => First() != null ? Eff.F(First().DailyWage) : "no packager");
-            Eff.Add(Options.PackagerSigningFee, () => First() != null ? Eff.F(First().SigningFee) : "no packager");
+            Eff.Add(Options.PackagerDailyWage, () => CommonEmployee.LiveMoney(First(), NetworkSingleton<EmployeeManager>.Instance?.PackagerPrefab, false));
+            Eff.Add(Options.PackagerSigningFee, () => CommonEmployee.LiveMoney(First(), NetworkSingleton<EmployeeManager>.Instance?.PackagerPrefab, true));
             Eff.Add(Options.PackagerMaxStations, () => First() != null && First().configuration != null ? First().configuration.Stations.MaxItems.ToString() : "no packager");
             Eff.Add(Options.PackagerWorkSpeed, () => First() != null ? Eff.F(WorkSpeed.AppliedFactor(First())) : "no packager");
-            Eff.Add(Options.PackagerPackagingSpeed, () => First() != null ? Eff.F(WorkSpeed.AppliedFactor(First())) : "no packager");
+            Eff.Add(Options.PackagerPackagingSpeed, () => First() != null ? "multiplier " + Eff.F(First().PackagingSpeedMultiplier) : "no packager");
+            Eff.Add(Options.PackagerPackagingStationTime, () => WorkSpeed.LiveSeconds(Options.PackagerPackagingStationTime.Key));
+            Eff.Add(Options.PackagerBrickPressTime, () => WorkSpeed.LiveSeconds(Options.PackagerBrickPressTime.Key));
             foreach (ActSpec s in Specs.Values) { FloatOption o = s.Option; Eff.Add(o, () => WorkSpeed.LiveSeconds(o.Key)); }
         }
 
@@ -164,24 +181,62 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override void Sync()
         {
             EmployeeManager mgr = NetworkSingleton<EmployeeManager>.Instance;
-            if (mgr != null) Guarded("prefab", () => CommonEmployee.Prefab(mgr.PackagerPrefab, "packager", Options.PackagerDailyWage, Options.PackagerSigningFee));
-            foreach (Packager p in Roster.Packagers)
+            Packager prefab = mgr != null ? mgr.PackagerPrefab : null;
+            try { CommonEmployee.Prefab(prefab, "packager", Options.PackagerDailyWage, Options.PackagerSigningFee); }
+            catch (Exception ex) { Core.Failed(Name + ": prefab", ex); }
+            List<Packager> list = Roster.Packagers;
+            for (int i = 0; i < list.Count; i++)
             {
-                Packager e = p;
-                Guarded("employee " + e.name, () =>
-                {
-                    CommonEmployee.Walk(e, Options.PackagerWalkSpeed);
-                    CommonEmployee.Money(e, Options.PackagerDailyWage, Options.PackagerSigningFee);
-                    if (e.configuration == null || e.configuration.Stations == null) { Throttle.Warn("bal-packager: config", "Packager " + e.name + " has no configuration yet."); return; }
-                    CommonEmployee.SetMax(e.configuration.Stations, e, "max", Options.PackagerMaxStations);
-                });
+                Packager e = list[i];
+                try { SyncOne(e, prefab); }
+                catch (Exception ex) { Core.Failed(Name + ": employee " + e.name, ex); }
             }
+        }
+
+        private static void SyncOne(Packager e, Employee prefab)
+        {
+            CommonEmployee.Walk(e, Options.PackagerWalkSpeed);
+            CommonEmployee.Money(e, prefab, Options.PackagerDailyWage, Options.PackagerSigningFee);
+            if (e.configuration == null || e.configuration.Stations == null) { Throttle.Warn("bal-packager: config", "Packager " + e.name + " has no configuration yet."); return; }
+            CommonEmployee.SetMax(e.configuration.Stations, e, VSlot.Max, Options.PackagerMaxStations);
         }
 
         protected override void PerFrame()
         {
-            float baseSpeed = Options.PackagerWorkSpeed.Value * Options.PackagerPackagingSpeed.Value;
-            DriveAll(Roster.Packagers, baseSpeed, Specs);
+            float workSpeed = Options.PackagerWorkSpeed.Value;
+            DriveAll(Roster.Packagers, workSpeed, Specs);
+            List<Packager> list = Roster.Packagers;
+            for (int i = 0; i < list.Count; i++)
+            {
+                Packager e = list[i];
+                try { DrivePackaging(e, workSpeed); }
+                catch (Exception ex) { Core.Failed(Name + ": packaging speed " + e.name, ex); }
+            }
+        }
+
+        /// <summary>
+        /// Writes the multiplier the packaging coroutines read when a wait starts: the game's own value times PackagingSpeed,
+        /// and while the packager runs the station or the press, times vanilla seconds over the wanted seconds. Back at
+        /// the default the game's value is written back.
+        /// </summary>
+        private static void DrivePackaging(Packager e, float workSpeed)
+        {
+            float live = e.PackagingSpeedMultiplier;
+            float want = Vanilla.Of(e, VSlot.PackagingSpeed, live) * Options.PackagerPackagingSpeed.Value;
+            NpcBehaviour active = e.Behaviour != null ? e.Behaviour.activeBehaviour : null;
+            Act act = ActionKinds.Of(active);
+            float speed = Options.PackagerPackagingSpeed.Value;
+            if (act == Act.Packaging && Vanilla.Active(Options.PackagerPackagingStationTime))
+            {
+                want *= PackagingVanillaSeconds / Options.PackagerPackagingStationTime.Value;
+                WorkSpeed.Note(Options.PackagerPackagingStationTime.Key, Options.PackagerPackagingStationTime.Value, workSpeed * speed);
+            }
+            else if (act == Act.BrickPress && Vanilla.Active(Options.PackagerBrickPressTime))
+            {
+                want *= BrickPressVanillaSeconds / Options.PackagerBrickPressTime.Value;
+                WorkSpeed.Note(Options.PackagerBrickPressTime.Key, Options.PackagerBrickPressTime.Value, workSpeed * speed);
+            }
+            if (Math.Abs(live - want) > 1e-4f) e.PackagingSpeedMultiplier = want;
         }
 
         protected override string Details() => "packagers=" + Roster.Packagers.Count;
@@ -206,21 +261,35 @@ namespace ActuallyWorkingEmployees.Features.Balance
 
         protected override void Sync()
         {
-            foreach (Packager p in Roster.Packagers)
+            List<Packager> list = Roster.Packagers;
+            for (int i = 0; i < list.Count; i++)
             {
-                Packager e = p;
-                Guarded("routes " + e.name, () =>
-                {
-                    PackagerConfiguration cfg = e.configuration;
-                    if (cfg == null || cfg.Routes == null) { Throttle.Warn("fix7: config", "Packager " + e.name + " has no route list yet."); return; }
-                    int live = cfg.Routes.MaxRoutes;
-                    int want = Vanilla.Want(e, "routes", live, Vanilla.Active(Options.PackagerMaxRoutes), Options.PackagerMaxRoutes.Value);
-                    if (live == want) return;
-                    cfg.Routes.MaxRoutes = want;
-                    _written++;
-                    Core.Log?.Msg("[fix7-packager-routes] " + e.name + ": route limit " + live + " -> " + want + ".");
-                });
+                Packager e = list[i];
+                try { SyncOne(e); }
+                catch (Exception ex) { Core.Failed(Name + ": routes " + e.name, ex); }
             }
+        }
+
+        /// <summary>
+        /// A limit below the routes a packager already has keeps those routes and only blocks new ones: the game checks
+        /// the limit when a route is added and never removes one.
+        /// </summary>
+        private void SyncOne(Packager e)
+        {
+            PackagerConfiguration cfg = e.configuration;
+            if (cfg == null || cfg.Routes == null) { Throttle.Warn("fix7: config", "Packager " + e.name + " has no route list yet."); return; }
+            int live = cfg.Routes.MaxRoutes;
+            int want = Vanilla.Want(e, VSlot.Routes, live, Vanilla.Active(Options.PackagerMaxRoutes), Options.PackagerMaxRoutes.Value);
+            if (live != want)
+            {
+                cfg.Routes.MaxRoutes = want;
+                _written++;
+                Core.Log?.Msg("[fix7-packager-routes] " + e.name + ": route limit " + live + " -> " + want + ".");
+            }
+            var routes = cfg.Routes.Routes;
+            int have = routes != null ? routes.Count : 0;
+            if (have > want)
+                Throttle.Info("fix7: over limit " + e.name, e.name + " has " + have + " routes and the limit is " + want + ": the routes stay, no new route can be added.", 300f);
         }
 
         protected override void OnReset() { _written = 0; }
@@ -228,7 +297,10 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override string Details() => "packagers=" + Roster.Packagers.Count + " writes=" + _written;
     }
 
-    /// <summary>Cleaner: walk speed, wage, fee and bin limit. Its action times are not scalable (see Options.Cleaner).</summary>
+    /// <summary>
+    /// Cleaner: walk speed, wage, fee, bin limit and the action times. The cleaner behaviours wait with literal
+    /// WaitForSeconds and read no work speed, so the times are scaled in <see cref="CleanerWaitPatches"/>.
+    /// </summary>
     internal sealed class CleanerBalance : BalanceFeature
     {
         public override string Name => "bal-cleaner";
@@ -236,14 +308,21 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override IEnumerable<Option> Watched => new Option[]
         {
             Options.CleanerWalkSpeed, Options.CleanerDailyWage, Options.CleanerSigningFee, Options.CleanerMaxBins,
+            Options.CleanerWorkSpeed, Options.CleanerTrashPickupTime, Options.CleanerBagTime, Options.CleanerDisposeTime,
+            Options.CleanerEmptyGrabberTime,
         };
 
         protected override void OnInit()
         {
             Eff.Add(Options.CleanerWalkSpeed, () => CommonEmployee.LiveWalk(First()));
-            Eff.Add(Options.CleanerDailyWage, () => First() != null ? Eff.F(First().DailyWage) : "no cleaner");
-            Eff.Add(Options.CleanerSigningFee, () => First() != null ? Eff.F(First().SigningFee) : "no cleaner");
+            Eff.Add(Options.CleanerDailyWage, () => CommonEmployee.LiveMoney(First(), NetworkSingleton<EmployeeManager>.Instance?.CleanerPrefab, false));
+            Eff.Add(Options.CleanerSigningFee, () => CommonEmployee.LiveMoney(First(), NetworkSingleton<EmployeeManager>.Instance?.CleanerPrefab, true));
             Eff.Add(Options.CleanerMaxBins, () => First() != null && First().configuration != null ? First().configuration.Bins.MaxItems.ToString() : "no cleaner");
+            Eff.Add(Options.CleanerWorkSpeed, () => CleanerWaits.Seen(CleanerWaits.Kind.Any));
+            Eff.Add(Options.CleanerTrashPickupTime, () => CleanerWaits.Seen(CleanerWaits.Kind.Pickup));
+            Eff.Add(Options.CleanerBagTime, () => CleanerWaits.Seen(CleanerWaits.Kind.Bag));
+            Eff.Add(Options.CleanerDisposeTime, () => CleanerWaits.Seen(CleanerWaits.Kind.Dispose));
+            Eff.Add(Options.CleanerEmptyGrabberTime, () => CleanerWaits.Seen(CleanerWaits.Kind.Grabber));
         }
 
         private static Cleaner First() => Roster.Cleaners.Count > 0 ? Roster.Cleaners[0] : null;
@@ -251,18 +330,24 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override void Sync()
         {
             EmployeeManager mgr = NetworkSingleton<EmployeeManager>.Instance;
-            if (mgr != null) Guarded("prefab", () => CommonEmployee.Prefab(mgr.CleanerPrefab, "cleaner", Options.CleanerDailyWage, Options.CleanerSigningFee));
-            foreach (Cleaner c in Roster.Cleaners)
+            Cleaner prefab = mgr != null ? mgr.CleanerPrefab : null;
+            try { CommonEmployee.Prefab(prefab, "cleaner", Options.CleanerDailyWage, Options.CleanerSigningFee); }
+            catch (Exception ex) { Core.Failed(Name + ": prefab", ex); }
+            List<Cleaner> list = Roster.Cleaners;
+            for (int i = 0; i < list.Count; i++)
             {
-                Cleaner e = c;
-                Guarded("employee " + e.name, () =>
-                {
-                    CommonEmployee.Walk(e, Options.CleanerWalkSpeed);
-                    CommonEmployee.Money(e, Options.CleanerDailyWage, Options.CleanerSigningFee);
-                    if (e.configuration == null || e.configuration.Bins == null) { Throttle.Warn("bal-cleaner: config", "Cleaner " + e.name + " has no configuration yet."); return; }
-                    CommonEmployee.SetMax(e.configuration.Bins, e, "max", Options.CleanerMaxBins);
-                });
+                Cleaner e = list[i];
+                try { SyncOne(e, prefab); }
+                catch (Exception ex) { Core.Failed(Name + ": employee " + e.name, ex); }
             }
+        }
+
+        private static void SyncOne(Cleaner e, Employee prefab)
+        {
+            CommonEmployee.Walk(e, Options.CleanerWalkSpeed);
+            CommonEmployee.Money(e, prefab, Options.CleanerDailyWage, Options.CleanerSigningFee);
+            if (e.configuration == null || e.configuration.Bins == null) { Throttle.Warn("bal-cleaner: config", "Cleaner " + e.name + " has no configuration yet."); return; }
+            CommonEmployee.SetMax(e.configuration.Bins, e, VSlot.Max, Options.CleanerMaxBins);
         }
 
         protected override string Details() => "cleaners=" + Roster.Cleaners.Count;
