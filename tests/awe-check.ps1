@@ -280,8 +280,11 @@ $rows.Add((New-Row 'persist-reload' -Finally 'awe reset botanist.maxpots' -Run {
     if (-not $save.ok) { return "save_now answered $($save | ConvertTo-Json -Compress)" }
     $menu = Invoke-Bridge $Slot 'return_to_menu'
     if (-not $menu.ok) { return "return_to_menu answered $($menu | ConvertTo-Json -Compress)" }
-    $why = Wait-Until -TimeoutSec 90 -What 'the main menu (inGame false)' -Condition {
-        try { -not (Get-Health $Slot).inGame } catch { $script:LastPollError = $_.Exception.Message; $false }
+    # inGame turns false when the menu scene starts loading; load_save answers BUSY until that load is over, which takes
+    # longer with more mods in the slot.
+    $why = Wait-Until -TimeoutSec 90 -What 'the main menu (scene Menu, inGame false, loading false)' -Condition {
+        try { $mh = Get-Health $Slot; $mh.scene -eq 'Menu' -and -not $mh.inGame -and -not $mh.loading }
+        catch { $script:LastPollError = $_.Exception.Message; $false }
     }
     if ($why) { return $why }
 

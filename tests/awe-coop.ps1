@@ -51,10 +51,29 @@ function Get-Sync {
     if ($head -notmatch 'role=(?<role>\S+) key=(?<key>\S+) bytes=(?<bytes>\d+) hash=(?<hash>\S+) writes=(?<writes>\d+) readback_fail=(?<rf>\d+) applied=(?<applied>\d+) inLobby=(?<lobby>\w+)') {
         return "unparsable sync line on ${Slot}: $head"
     }
-    $s = @{ Role = $Matches.role; Key = $Matches.key; Hash = $Matches.hash; ReadbackFail = [int]$Matches.rf; InLobby = $Matches.lobby; Head = $head; Decoded = '' }
+    $s = @{ Role = $Matches.role; Key = $Matches.key; Hash = $Matches.hash; ReadbackFail = [int]$Matches.rf; InLobby = $Matches.lobby; Head = $head; Decoded = ''
+            Writes = [int]$Matches.writes; Applied = [int]$Matches.applied }
     $dec = $r.Texts | Where-Object { $_ -match '^AWE sync decoded (\d+) option' } | Select-Object -Last 1
     if ($dec) { $s.Decoded = $dec }
     $s
+}
+
+# Publishes on the host and applies on the client, from the 'awe sync' counters. The matching [CoopSync] log lines are
+# throttled to one per 10 s (OptionSync.Info), so counting them misses changes that come close together.
+function Get-SyncCounts {
+    $h = Get-Sync $HostSlot;    if ($h -is [string]) { return $h }
+    $cl = Get-Sync $ClientSlot; if ($cl -is [string]) { return $cl }
+    @{ Writes = $h.Writes; Applied = $cl.Applied }
+}
+
+# Both sides' sync lines and the host's last guest line, appended to a sync timeout so the failure shows which side stopped.
+function Get-HostState {
+    $h = Get-Sync $HostSlot
+    $hs = if ($h -is [string]) { $h } else { $h.Head }
+    $cl = Get-Sync $ClientSlot
+    $cs = if ($cl -is [string]) { $cl } else { $cl.Head }
+    $guest = (Get-LogLines -Slot $HostSlot -Grep 'guest' -Count 5).Lines | Where-Object { $_ -match 'guest present|no guest' } | Select-Object -Last 1
+    "host now: '$hs'; client now: '$cs'; host guest line: '$guest'"
 }
 
 function Count-CoopLines {
@@ -81,8 +100,7 @@ $rows.Add((New-Row 'roles' -Run {
 $rows.Add((New-Row 'sync-host-sets-client-locked' -Run {
     param($Slot)
     Reset-Both
-    $appliedBefore = Count-CoopLines $ClientSlot "applied the host's options"
-    $publishedBefore = Count-CoopLines $HostSlot 'published'
+    $before = Get-SyncCounts; if ($before -is [string]) { return $before }
     foreach ($c in $cases) {
         $why = Test-Step -Slot $HostSlot -Step (New-Step -Cmd "awe set $($c.Key) $($c.Set)" -Expect ([regex]::Escape($c.Key) + " = $($c.Shown)\s+\(default $($c.Default)\)"))
         if ($why) { return "host set: $why" }
@@ -92,10 +110,9 @@ $rows.Add((New-Row 'sync-host-sets-client-locked' -Run {
         $why = Wait-ClientLine -Key $c.Key -What "the client to show host=$shown for $($c.Key)" -Test ({ param($l) $l -match "host=$shown\b" -and $l -match 'read-only' }.GetNewClosure())
         if ($why) { return $why }
     }
-    $pub = Count-CoopLines $HostSlot 'published'
-    if ($pub -le $publishedBefore) { return "no new '[CoopSync] published' line on the host ($publishedBefore before, $pub now)" }
-    $app = Count-CoopLines $ClientSlot "applied the host's options"
-    if ($app -le $appliedBefore) { return "no new '[CoopSync] applied the host's options' line on the client ($appliedBefore before, $app now)" }
+    $after = Get-SyncCounts; if ($after -is [string]) { return $after }
+    if ($after.Writes -le $before.Writes) { return "the host did not publish (writes $($before.Writes) before, $($after.Writes) now)" }
+    if ($after.Applied -le $before.Applied) { return "the client did not apply the host's options (applied $($before.Applied) before, $($after.Applied) now)" }
     $null
 }))
 
@@ -130,16 +147,18 @@ $rows.Add((New-Row 'sync-readback-and-hash' -Run {
 $rows.Add((New-Row 'sync-host-reset-client-follows' -Run {
     param($Slot)
     $clearedBefore = Count-CoopLines $ClientSlot "cleared the host's values"
-    Invoke-Awe -Slot $HostSlot -Cmd 'awe reset all' -Until 'reset all' | Out-Null
+    $before = Get-SyncCounts; if ($before -is [string]) { return $before }
+    $r = Invoke-Awe -Slot $HostSlot -Cmd 'awe reset all' -Until 'reset all'
+    if (-not ($r.Texts | Where-Object { $_ -match 'awe reset all: \d+ option' })) { return "host reset did not run: $(($r.Raw | Select-Object -Last 3) -join ' | ')" }
     foreach ($c in $cases) {
         $shown = $c.Shown
         $why = Wait-ClientLine -Key $c.Key -What "the client to drop host=$shown for $($c.Key)" -Test ({ param($l) $l -notmatch "host=$shown\b" }.GetNewClosure())
-        if ($why) { return $why }
+        if ($why) { return "$why; $(Get-HostState)" }
     }
     $cleared = Count-CoopLines $ClientSlot "cleared the host's values"
-    $applied = Count-CoopLines $ClientSlot "applied the host's options"
-    # Either the client cleared the host's values or applied a new (smaller) set; the log must show one of the two happened.
-    if ($cleared -le $clearedBefore -and $applied -eq 0) { return "client followed the reset but logged neither 'cleared the host's values' nor 'applied the host's options'" }
+    $after = Get-SyncCounts; if ($after -is [string]) { return $after }
+    # Either the client cleared the host's values or applied a new (smaller) set; one of the two must have happened.
+    if ($cleared -le $clearedBefore -and $after.Applied -le $before.Applied) { return "client followed the reset but neither cleared the host's values nor applied a new set (applied $($before.Applied) before, $($after.Applied) now)" }
     $h = Get-Sync $HostSlot;    if ($h -is [string]) { return $h }
     $cl = Get-Sync $ClientSlot; if ($cl -is [string]) { return $cl }
     if ($h.ReadbackFail -ne 0 -or $cl.ReadbackFail -ne 0) { return "readback_fail host=$($h.ReadbackFail) client=$($cl.ReadbackFail) after the reset" }
@@ -158,20 +177,20 @@ $rows.Add((New-Row 'sync-no-failures-in-log' -Run {
     $null
 }))
 
-# A balance option (fix 7, packager route limit) set on the host reaches the client: published and applied lines, the client's
+# A balance option (fix 7, packager route limit) set on the host reaches the client: the host's writes and the client's applied counter grow, the client's
 # read-only host= value, the decoded key on both sides and equal hashes. The client's balance feature must not apply it itself.
 $rows.Add((New-Row 'sync-feature-balance' -Finally 'awe reset packager.maxroutes' -Run {
     param($Slot)
     $key = 'packager.maxroutes'
     Reset-Both
-    $appliedBefore = Count-CoopLines $ClientSlot "applied the host's options"
-    $publishedBefore = Count-CoopLines $HostSlot 'published'
+    $before = Get-SyncCounts; if ($before -is [string]) { return $before }
     $why = Test-Step -Slot $HostSlot -Step (New-Step -Cmd "awe set $key 7" -Expect ([regex]::Escape($key) + ' = 7\s+\(default 5\)') -Forbid 'Exception')
     if ($why) { return "host set: $why" }
     $why = Wait-ClientLine -Key $key -What "the client to show host=7 for $key" -Test ({ param($l) $l -match 'host=7\b' -and $l -match 'read-only' })
-    if ($why) { return $why }
-    if ((Count-CoopLines $HostSlot 'published') -le $publishedBefore) { return "no new '[CoopSync] published' line on the host after setting $key" }
-    if ((Count-CoopLines $ClientSlot "applied the host's options") -le $appliedBefore) { return "no new '[CoopSync] applied the host's options' line on the client after setting $key" }
+    if ($why) { return "$why; $(Get-HostState)" }
+    $after = Get-SyncCounts; if ($after -is [string]) { return $after }
+    if ($after.Writes -le $before.Writes) { return "the host did not publish after setting $key (writes $($before.Writes) before, $($after.Writes) now)" }
+    if ($after.Applied -le $before.Applied) { return "the client did not apply the host's options after setting $key (applied $($before.Applied) before, $($after.Applied) now)" }
     $h = Get-Sync $HostSlot;    if ($h -is [string]) { return $h }
     $cl = Get-Sync $ClientSlot; if ($cl -is [string]) { return $cl }
     if ($h.Decoded -notmatch ([regex]::Escape($key) + '=7\b')) { return "host decoded line lacks $key=7: $($h.Decoded)" }
