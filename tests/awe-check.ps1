@@ -258,7 +258,7 @@ $rows.Add((New-Row 'preset-fast' -Finally 'awe reset all' -Steps (@(
     New-Step -Cmd 'awe preset bogus' -Until 'awe preset' -Expect "awe preset: no preset 'bogus'\. Presets: fast"
     New-Step -Cmd 'awe status' -Expect 'changed=4\b'
     New-Step -Cmd 'awe reset all' -Expect 'awe reset all: 4 option\(s\) reset\.'
-) + @($fastKeys | ForEach-Object { Step-Get $_ '1' })))))
+) + @($fastKeys | ForEach-Object { Step-Get $_ '1' }))))
 
 # -- status:every feature the boot log announced is listed with its state --
 $rows.Add((New-Row 'status' -Steps @(
