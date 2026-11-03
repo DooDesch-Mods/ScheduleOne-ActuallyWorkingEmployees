@@ -70,7 +70,7 @@ namespace ActuallyWorkingEmployees.Config
             if (s.Equals("default", StringComparison.OrdinalIgnoreCase) || s.Equals("vanilla", StringComparison.OrdinalIgnoreCase))
                 s = DefaultText;
             if (!TryStore(s, out error)) return false;
-            Core.LogDebug("[Options] " + Key + " = " + ValueText);
+            if (Core.Verbose) Core.Log?.Msg("[Options] " + Key + " = " + ValueText);
             RaiseChanged();
             return true;
         }

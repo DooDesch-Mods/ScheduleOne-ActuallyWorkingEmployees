@@ -16,7 +16,8 @@ namespace ActuallyWorkingEmployees.Compat
     /// </summary>
     internal static class NativeMethods
     {
-        private static readonly List<string> _pending = new List<string>();
+        private static readonly List<KeyValuePair<bool, string>> _pending = new List<KeyValuePair<bool, string>>();
+        private static readonly string OwnAssembly = typeof(NativeMethods).Assembly.GetName().Name;
 
         /// <summary>
         /// Address of the native function that <paramref name="m"/> calls, read from its NativeMethodInfoPtr_ field
@@ -24,36 +25,119 @@ namespace ActuallyWorkingEmployees.Compat
         /// </summary>
         internal static IntPtr Address(MethodBase m)
         {
+            IntPtr a = TryAddress(m, out string problem);
+            if (problem != null) Note("[NativeMethods] " + problem);
+            return a;
+        }
+
+        /// <summary>Like <see cref="Address"/>, but returns the reason instead of logging it. <paramref name="problem"/> is null on success.</summary>
+        private static IntPtr TryAddress(MethodBase m, out string problem)
+        {
+            problem = null;
             Type t = m?.DeclaringType;
-            if (t == null) return IntPtr.Zero;
+            if (t == null) { problem = "method without a declaring type, address not resolved."; return IntPtr.Zero; }
             string prefix = "NativeMethodInfoPtr_" + m.Name + "_";
             FieldInfo found = null;
             foreach (FieldInfo f in t.GetFields(BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly))
             {
                 if (!f.Name.StartsWith(prefix, StringComparison.Ordinal)) continue;
-                if (found != null) { Note("[NativeMethods] " + t.Name + "." + m.Name + " has several overloads, address not resolved."); return IntPtr.Zero; }
+                if (found != null) { problem = t.Name + "." + m.Name + " has several overloads, address not resolved."; return IntPtr.Zero; }
                 found = f;
             }
-            if (found == null) { Note("[NativeMethods] " + t.Name + "." + m.Name + " has no NativeMethodInfoPtr_ field, address not resolved."); return IntPtr.Zero; }
+            if (found == null) { problem = t.Name + "." + m.Name + " has no NativeMethodInfoPtr_ field, address not resolved."; return IntPtr.Zero; }
             IntPtr info = (IntPtr)found.GetValue(null);
-            return info == IntPtr.Zero ? IntPtr.Zero : Marshal.ReadIntPtr(info);
+            if (info == IntPtr.Zero) { problem = t.Name + "." + m.Name + ": NativeMethodInfoPtr_ is not set, address not resolved."; return IntPtr.Zero; }
+            return Marshal.ReadIntPtr(info);
         }
 
         /// <summary>
-        /// <paramref name="methods"/> reduced to one method per native address, in the given order. A method whose
-        /// address cannot be read is kept. Every shared address is logged with the methods that share it.
+        /// Every interop method that a Harmony owner other than this mod has patched so far, by native address, with a
+        /// description "Type.Method (owner, owner)". Methods whose address cannot be read are left out.
+        /// </summary>
+        private static Dictionary<IntPtr, List<KeyValuePair<MethodBase, string>>> ForeignPatched()
+        {
+            var map = new Dictionary<IntPtr, List<KeyValuePair<MethodBase, string>>>();
+            foreach (MethodBase m in HarmonyLib.Harmony.GetAllPatchedMethods())
+            {
+                try
+                {
+                    Type t = m.DeclaringType;
+                    if (t == null || !typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase).IsAssignableFrom(t)) continue;
+                    HarmonyLib.Patches info = HarmonyLib.Harmony.GetPatchInfo(m);
+                    if (info == null) continue;
+                    var others = new List<string>();
+                    foreach (string owner in info.Owners)
+                        if (owner != null && owner.IndexOf(OwnAssembly, StringComparison.OrdinalIgnoreCase) < 0) others.Add(owner);
+                    if (others.Count == 0) continue;
+                    IntPtr a = TryAddress(m, out _);
+                    if (a == IntPtr.Zero) continue;
+                    if (!map.TryGetValue(a, out var list)) map[a] = list = new List<KeyValuePair<MethodBase, string>>();
+                    list.Add(new KeyValuePair<MethodBase, string>(m, t.Name + "." + m.Name + " (" + string.Join(", ", others) + ")"));
+                }
+                catch (Exception e) { Note("[NativeMethods] could not inspect a patched method of " + m?.DeclaringType?.Name + ": " + e.GetType().Name + ": " + e.Message, true); }
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// False when <paramref name="m"/> shares its native address with a different method that another mod has already
+        /// patched: a second detour on that address overflows the stack. True when no such patch exists or the address is
+        /// unknown. Meant for a patch class's <c>Prepare(MethodBase)</c>. Logs one warning per refused method.
+        /// </summary>
+        internal static bool AllowPatch(MethodBase m)
+        {
+            IntPtr a = TryAddress(m, out _);
+            if (a == IntPtr.Zero) return true;
+            if (!ForeignPatched().TryGetValue(a, out var list)) return true;
+            foreach (var kv in list)
+            {
+                if (kv.Key == m) continue;
+                Note("[NativeMethods] " + m.DeclaringType?.Name + "." + m.Name + " not patched: its native code at 0x" + a.ToString("X")
+                    + " is already patched through " + kv.Value + ".", true);
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// <paramref name="methods"/> reduced to one method per native address, in the given order. A method whose address
+        /// cannot be read is refused with a warning, because it may share code with another patched method and a double
+        /// detour kills the game. A method that shares its address with a different method another mod has already patched
+        /// is skipped with a warning too. Every shared address is logged with the methods that share it.
         /// </summary>
         internal static List<MethodBase> OnePerAddress(string what, IEnumerable<MethodBase> methods)
         {
             var result = new List<MethodBase>();
             var byAddress = new Dictionary<IntPtr, List<string>>();
+            Dictionary<IntPtr, List<KeyValuePair<MethodBase, string>>> foreign = null;
+            int refused = 0, skippedForeign = 0;
             foreach (MethodBase m in methods)
             {
                 if (m == null) continue;
+                string label = m.DeclaringType?.Name + "." + m.Name;
                 IntPtr a;
-                try { a = Address(m); }
-                catch (Exception e) { Note("[NativeMethods] " + m.DeclaringType?.Name + "." + m.Name + ": address read failed, " + e.GetType().Name + ": " + e.Message); a = IntPtr.Zero; }
-                if (a == IntPtr.Zero) { result.Add(m); continue; }
+                string problem;
+                try { a = TryAddress(m, out problem); }
+                catch (Exception e) { a = IntPtr.Zero; problem = "address read failed, " + e.GetType().Name + ": " + e.Message; }
+                if (a == IntPtr.Zero)
+                {
+                    refused++;
+                    Note("[NativeMethods] " + what + ": " + label + " not patched, its native address is unknown (" + problem + ").", true);
+                    continue;
+                }
+
+                foreign ??= ForeignPatched();
+                string other = null;
+                if (foreign.TryGetValue(a, out var patchedBy))
+                    foreach (var kv in patchedBy)
+                        if (kv.Key != m) { other = kv.Value; break; }
+                if (other != null)
+                {
+                    skippedForeign++;
+                    Note("[NativeMethods] " + what + ": " + label + " not patched, its native code at 0x" + a.ToString("X") + " is already patched through " + other + ".", true);
+                    continue;
+                }
+
                 if (!byAddress.TryGetValue(a, out List<string> names))
                 {
                     byAddress[a] = names = new List<string>();
@@ -64,7 +148,8 @@ namespace ActuallyWorkingEmployees.Compat
             foreach (var kv in byAddress)
                 if (kv.Value.Count > 1)
                     Note("[NativeMethods] " + what + ": " + string.Join(", ", kv.Value) + " share native code at 0x" + kv.Key.ToString("X") + ", patched once.");
-            Note("[NativeMethods] " + what + ": " + result.Count + " patch target(s) for " + CountOf(methods) + " method(s).");
+            Note("[NativeMethods] " + what + ": " + result.Count + " patch target(s) for " + CountOf(methods) + " method(s), "
+                + refused + " refused (address unknown), " + skippedForeign + " skipped (address patched by another mod).");
             return result;
         }
 
@@ -115,15 +200,22 @@ namespace ActuallyWorkingEmployees.Compat
         }
 
         /// <summary>Patches are applied before the mod's logger exists; lines are held until <see cref="Flush"/>.</summary>
-        private static void Note(string line)
+        private static void Note(string line, bool warn = false)
         {
-            if (Core.Log != null) Core.Log.Msg(line);
-            else _pending.Add(line);
+            if (Core.Log != null)
+            {
+                if (warn) Core.Log.Warning(line); else Core.Log.Msg(line);
+            }
+            else _pending.Add(new KeyValuePair<bool, string>(warn, line));
         }
 
         internal static void Flush()
         {
-            foreach (string line in _pending) Core.Log?.Msg(line);
+            foreach (var line in _pending)
+            {
+                if (line.Key) Core.Log?.Warning(line.Value);
+                else Core.Log?.Msg(line.Value);
+            }
             _pending.Clear();
         }
     }

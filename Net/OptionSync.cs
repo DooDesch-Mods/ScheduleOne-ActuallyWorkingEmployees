@@ -16,10 +16,11 @@ namespace ActuallyWorkingEmployees.Networking
     /// Co-op option sync. The host publishes the balance values it effectively runs with in ONE Steam lobby key
     /// (<see cref="LobbyKey"/>); each client reads it and hands the values to <see cref="Option.SetHostValue"/>.
     ///
-    /// Wire form: <c>1|&lt;hash8&gt;|&lt;body&gt;</c>. The body lists only host-only options that differ from their default,
-    /// grouped as <c>group:id=value,id=value;group:id=value</c> with lower-case group and id (the option key split at the
-    /// dot). Option ids are the stable names, so a newer or older mod version never misreads an index. The hash is FNV-1a
-    /// 32 over the body: clients use it to detect a change, and to reject a value that Steam truncated or garbled.
+    /// Wire form: <c>2|&lt;hash8&gt;|&lt;body&gt;</c>. The body lists only host-only options that differ from their default,
+    /// as <c>key=value,key=value</c> where key is a 4-character short key derived from the option's stable name (see
+    /// <see cref="ShortKeys"/>), not from its position, so a newer or older mod version never misreads a key; a key it
+    /// does not know is skipped and logged. Version 1 (full group:id names) is still read. The hash is FNV-1a 32 over
+    /// the body: clients use it to detect a change, and to reject a value that Steam truncated or garbled.
     /// Bools travel as 1/0. A present key with an empty body means "host runs AWE, everything at default".
     ///
     /// Steam gives the whole lobby one ~8 KB metadata blob shared with the game and every other mod, and answers a
@@ -28,7 +29,8 @@ namespace ActuallyWorkingEmployees.Networking
     internal sealed class OptionSync : IFeature
     {
         internal const string LobbyKey = "awe_opts";
-        private const string WireVersion = "1";
+        private const string WireVersion = "2";
+        private const string LegacyWireVersion = "1";
         private const float PollSeconds = 2f;
         private const float RetrySeconds = 10f;
         private const float InfoThrottleSeconds = 10f;
@@ -64,18 +66,24 @@ namespace ActuallyWorkingEmployees.Networking
 
         public void Reset()
         {
-            if (_appliedHash.Length > 0) ClearHostValues("state reset");
+            // A client that is still connected keeps the values it received: the host's key stays on the lobby, and the
+            // next poll compares hashes anyway. Everything else drops them.
+            bool keepHostValues = Net.IsClientOnly;
+            if (_appliedHash.Length > 0 && !keepHostValues) ClearHostValues("state reset");
             _lastWritten = "";
             _lastHash = "";
             _lastBytes = 0;
             _poll = 0f;
             _retryIn = 0f;
-            _wasClient = false;
+            if (!keepHostValues) _wasClient = false;
         }
 
+        /// <summary>bytes = size on the lobby (0 until a lobby exists); wire = size of what this host would publish now.</summary>
         public string Status
-            => "role=" + Net.RoleText() + " bytes=" + _lastBytes + " writes=" + _writes + " readback_fail=" + _readbackFail
+            => "role=" + Net.RoleText() + " bytes=" + _lastBytes + " wire=" + WireBytes() + " writes=" + _writes + " readback_fail=" + _readbackFail
                + " applied=" + _applied + " hash=" + (_lastHash.Length > 0 ? _lastHash : "-");
+
+        private static int WireBytes() => Net.IsServer ? Utf8(LobbyKey) + Utf8(Encode(out _)) : 0;
 
         public void Tick(float dt)
         {
@@ -216,8 +224,6 @@ namespace ActuallyWorkingEmployees.Networking
         /// <summary>Wire text for the options this host effectively runs with.</summary>
         internal static string Encode(out string hash)
         {
-            var groups = new List<string>();
-            string currentGroup = null;
             var sb = new StringBuilder();
             foreach (Option o in Options.All)
             {
@@ -226,28 +232,70 @@ namespace ActuallyWorkingEmployees.Networking
                 if (text == o.DefaultText) continue;
 
                 string value = o.Kind == OptionKind.Bool ? (text == "true" ? "1" : "0") : text;
-                string group = o.Group.ToLowerInvariant();
-                string id = o.Id.ToLowerInvariant();
-                if (!Safe(group) || !Safe(id) || !Safe(value))
+                if (!Safe(value))
                 {
-                    Core.Log?.Error("[CoopSync] option " + o.Key + " skipped: its id or value '" + value + "' contains a reserved character.");
+                    Core.Log?.Error("[CoopSync] option " + o.Key + " skipped: its value '" + value + "' contains a reserved character.");
                     continue;
                 }
-                if (group != currentGroup)
+                if (!ShortKeys().TryGetValue(o, out string sk))
                 {
-                    if (currentGroup != null) groups.Add(sb.ToString());
-                    sb.Clear();
-                    sb.Append(group).Append(':');
-                    currentGroup = group;
+                    Core.Log?.Error("[CoopSync] option " + o.Key + " skipped: its short key collides with another option.");
+                    continue;
                 }
-                else sb.Append(',');
-                sb.Append(id).Append('=').Append(value);
+                if (sb.Length > 0) sb.Append(',');
+                sb.Append(sk).Append('=').Append(value);
             }
-            if (currentGroup != null) groups.Add(sb.ToString());
 
-            string body = string.Join(";", groups);
+            string body = sb.ToString();
             hash = Fnv(body);
             return WireVersion + "|" + hash + "|" + body;
+        }
+
+        private static Dictionary<Option, string> _shortByOption;
+        private static Dictionary<string, Option> _optionByShort;
+
+        /// <summary>
+        /// A 4-character base-36 key per host-only option, derived from the option key alone (FNV-1a of "group.id" modulo
+        /// 36^4). It does not depend on option order, so another mod version still reads the same key; an option that
+        /// version does not have is reported as unknown. Two local options with the same key are both left out and logged.
+        /// </summary>
+        private static Dictionary<Option, string> ShortKeys()
+        {
+            if (_shortByOption != null && _shortByOption.Count > 0) return _shortByOption;
+            var byOption = new Dictionary<Option, string>();
+            var byShort = new Dictionary<string, Option>();
+            var clashing = new HashSet<string>();
+            foreach (Option o in Options.All)
+            {
+                if (!o.HostOnly) continue;
+                string sk = ShortKey(o.Key);
+                if (byShort.TryGetValue(sk, out Option first))
+                {
+                    if (clashing.Add(sk))
+                    {
+                        byOption.Remove(first);
+                        Core.Log?.Error("[CoopSync] options " + first.Key + " and " + o.Key + " share the short key " + sk + "; neither is synced.");
+                    }
+                    else Core.Log?.Error("[CoopSync] option " + o.Key + " also shares the short key " + sk + "; not synced.");
+                    continue;
+                }
+                byShort[sk] = o;
+                byOption[o] = sk;
+            }
+            foreach (string sk in clashing) byShort.Remove(sk);
+            _optionByShort = byShort;
+            _shortByOption = byOption;
+            return byOption;
+        }
+
+        private static string ShortKey(string key)
+        {
+            uint h = 2166136261u;
+            foreach (byte b in Encoding.UTF8.GetBytes(key)) { h ^= b; h *= 16777619u; }
+            uint n = h % 1679616u;   // 36^4
+            var chars = new char[4];
+            for (int i = 3; i >= 0; i--) { uint d = n % 36u; chars[i] = (char)(d < 10 ? '0' + d : 'a' + (d - 10)); n /= 36u; }
+            return new string(chars);
         }
 
         /// <summary>The value the host's game logic uses: balance options read their default while vanilla balance is forced.</summary>
@@ -267,14 +315,33 @@ namespace ActuallyWorkingEmployees.Networking
 
             string[] parts = wire.Split(new[] { '|' }, 3);
             if (parts.Length != 3) { error = "not in the form version|hash|body"; return false; }
-            if (parts[0] != WireVersion) { error = "unsupported wire version '" + parts[0] + "' (this mod reads " + WireVersion + ")"; return false; }
+            bool legacy = parts[0] == LegacyWireVersion;
+            if (parts[0] != WireVersion && !legacy) { error = "unsupported wire version '" + parts[0] + "' (this mod reads " + LegacyWireVersion + " and " + WireVersion + ")"; return false; }
             hash = parts[1];
             string body = parts[2];
             if (Fnv(body) != hash) { error = "hash mismatch, the lobby value is cut off or damaged (header " + hash + ", body " + Fnv(body) + ")"; return false; }
 
             var unknown = new List<string>();
-            if (body.Length > 0)
+            if (!legacy)
             {
+                ShortKeys();   // fills the short-key lookup
+                if (body.Length > 0)
+                {
+                    foreach (string entry in body.Split(','))
+                    {
+                        int eq = entry.IndexOf('=');
+                        if (eq <= 0) { error = "entry without a value: '" + entry + "'"; return false; }
+                        string sk = entry.Substring(0, eq);
+                        string raw = entry.Substring(eq + 1);
+                        if (_optionByShort == null || !_optionByShort.TryGetValue(sk, out Option o)) { unknown.Add(sk); continue; }
+                        if (!TryValue(o, raw, out string text, out string why)) { error = o.Key + ": " + why; return false; }
+                        values.Add(new KeyValuePair<Option, string>(o, text));
+                    }
+                }
+            }
+            else if (body.Length > 0)
+            {
+                // Wire version 1: group:id=value,id=value;group:id=value with the full option ids.
                 foreach (string group in body.Split(';'))
                 {
                     int colon = group.IndexOf(':');

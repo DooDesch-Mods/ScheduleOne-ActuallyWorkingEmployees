@@ -14,12 +14,8 @@ namespace ActuallyWorkingEmployees.Config
             "Employees ignore furniture colliders", "Employees walk through furniture colliders on their path. Vanilla: off.",
             false, hostOnly: true, balance: false);
 
-        public static readonly BoolOption WarnOnHwe = new BoolOption("General", "WarnOnHwe",
-            "Warn about Harder Working Employees", "Logs a warning when Harder Working Employees is still in the Mods folder. This mod replaces it.",
-            true, hostOnly: false, balance: false);
-
         public static readonly BoolOption VerboseLogging = new BoolOption("General", "VerboseLogging",
-            "Verbose log", "Writes detailed debug lines to the log.",
+            "Verbose log", "Writes detailed lines to the log: option changes and feature start-up.",
             false, hostOnly: false, balance: false);
     }
 }

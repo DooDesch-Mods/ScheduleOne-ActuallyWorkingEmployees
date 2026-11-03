@@ -30,8 +30,32 @@ namespace ActuallyWorkingEmployees
         // Keys already reported by Caught / Failed / WarnOnce. Several callers sit in per-frame paths, so each site logs once.
         private static readonly HashSet<string> _reported = new HashSet<string>();
 
-        [System.Diagnostics.Conditional("DEBUG")]
-        public static void LogDebug(string msg) { Log?.Msg(msg); }
+        /// <summary>True while "Verbose log" is on. Check it before building a debug line, so the string is not built when off.</summary>
+        public static bool Verbose => Options.VerboseLogging.Value;
+
+        /// <summary>A debug line, written only while <see cref="Verbose"/> is on. Callers that build the string guard with Verbose first.</summary>
+        public static void LogDebug(string msg)
+        {
+            if (Verbose) Log?.Msg(msg);
+        }
+
+        /// <summary>
+        /// Raised when the log-once keys are cleared (save load, scene change). A helper that keeps its own log-once keys
+        /// subscribes and clears them, so a second save logs its messages again.
+        /// </summary>
+        internal static event Action OnceKeysReset;
+
+        private static void ResetOnceKeys()
+        {
+            _reported.Clear();
+            Action handlers = OnceKeysReset;
+            if (handlers == null) return;
+            foreach (Delegate d in handlers.GetInvocationList())
+            {
+                try { ((Action)d)(); }
+                catch (Exception e) { Failed("core: reset log-once keys (" + d.Method.DeclaringType?.Name + ")", e); }
+            }
+        }
 
         /// <summary>A caught exception the mod deliberately carries on after. Logs a warning once per <paramref name="where"/>.</summary>
         internal static void Caught(string where, Exception e)
@@ -65,7 +89,8 @@ namespace ActuallyWorkingEmployees
             // here would apply each a second time, and every postfix would then run twice per call.
             FeatureHost.Discover();
 
-            GameLifecycle.OnSaveStart += ResetState;
+            // Load start and scene change, not OnSaveStart: that one also fires on every autosave, which would wipe live state.
+            GameLifecycle.OnPreLoad += ResetState;
             GameLifecycle.OnPreSceneChange += ResetState;
 
 #if SNITCH
@@ -85,11 +110,12 @@ namespace ActuallyWorkingEmployees
             NativeMethods.ReportSharedPatchedAddresses();
         }
 
-        /// <summary>Drops every feature's in-memory state on save start and scene change.</summary>
+        /// <summary>Drops every feature's in-memory state and the log-once keys on load start and scene change.</summary>
         private static void ResetState()
         {
+            ResetOnceKeys();
             FeatureHost.ResetAll();
-            Log?.Msg("[Core] State reset (save or scene change).");
+            Log?.Msg("[Core] State reset (save load or scene change).");
         }
 
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)

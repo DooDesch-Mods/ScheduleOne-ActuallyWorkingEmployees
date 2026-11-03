@@ -22,7 +22,7 @@ namespace ActuallyWorkingEmployees.Features
         /// <summary>Runs every frame while the Main scene is loaded. Throttle inside; check Net.IsServer for host logic.</summary>
         void Tick(float dt);
 
-        /// <summary>Drops in-memory state on save start and scene change.</summary>
+        /// <summary>Drops in-memory state on save load and scene change (not on autosave).</summary>
         void Reset();
 
         /// <summary>One-line live state for 'awe status' and the Snitch panel.</summary>
@@ -54,7 +54,7 @@ namespace ActuallyWorkingEmployees.Features
                 {
                     f.Init();
                     _all.Add(f);
-                    Core.LogDebug("[Features] " + f.Name + " ready.");
+                    if (Core.Verbose) Core.Log?.Msg("[Features] " + f.Name + " ready.");
                 }
                 catch (Exception e) { Core.Failed("features: init " + t.Name, e); }
             }
