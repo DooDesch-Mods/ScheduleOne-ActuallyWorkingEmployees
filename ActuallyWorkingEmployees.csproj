@@ -66,7 +66,7 @@
 
   <!-- The phone app page. The LogicalName prefix is the bundle prefix. -->
   <ItemGroup>
-    <EmbeddedResource Include="Assets/app/*" Exclude="Assets/app/preview.html;Assets/app/mock.js">
+    <EmbeddedResource Include="Assets/app/*" Exclude="Assets/app/preview.html;Assets/app/s1-mock.js;Assets/app/sideload-preview.*;Assets/app/dom-surface.js;Assets/app/globals.js">
       <LogicalName>ActuallyWorkingEmployees.Assets.app.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>

@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- Browser preview of the app against the stand-in in s1-mock.js. Serve this folder over http (npx serve Assets/app)
+     and open preview.html; file:// cannot load an ES module. Not embedded in the mod. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="sideload-preview.css">
+</head>
+<body>
+<script type="module">
+import { mount } from './sideload-preview.js';
+import { call, scenarios } from './s1-mock.js';
+
+mount({
+  title: 'Employees',
+  background: '#0E1318',
+  accent: '#4FC38A',
+  call,
+  scenarios,
+});
+</script>
+</body>
+</html>
