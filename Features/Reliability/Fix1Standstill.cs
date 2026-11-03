@@ -202,6 +202,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     [HarmonyPatch(typeof(NpcBehaviour), nameof(NpcBehaviour.WalkCallback))]
     internal static class Awe_Fix1_WalkCallback_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static void Postfix(NpcBehaviour __instance, NPCMovement.WalkResult result)
         {
             // The warp inside OnWalkResult can end a walk and call back into WalkCallback.

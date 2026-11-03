@@ -346,6 +346,7 @@ namespace ActuallyWorkingEmployees.Features.Packaging
     [HarmonyPatch(typeof(Packager), nameof(Packager.GetTransitRouteReady))]
     internal static class Awe_Routes_GetTransitRouteReady_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static bool Prefix(Packager __instance, ref ItemInstance item, ref AdvancedTransitRoute __result)
         {
             if (!Rel.Enter("routes-select")) return true;

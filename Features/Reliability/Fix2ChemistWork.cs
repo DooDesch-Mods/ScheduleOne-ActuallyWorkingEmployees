@@ -148,6 +148,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     [HarmonyPatch(typeof(Chemist), nameof(Chemist.IsAnyWorkInProgress))]
     internal static class Awe_Fix2_IsAnyWorkInProgress_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static void Postfix(Chemist __instance, ref bool __result)
         {
             if (!Rel.Enter("fix2.isanywork")) return;

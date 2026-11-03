@@ -85,6 +85,7 @@ namespace ActuallyWorkingEmployees
             NativeMethods.Flush();   // lines of the patch-target resolution, which runs before the logger exists
 
             Options.Initialize();
+            OnceKeysReset += Features.Reliability.Rel.ResetOnceKeys;
             // MelonLoader has applied every [HarmonyPatch] class of this assembly before this method runs. A PatchAll
             // here would apply each a second time, and every postfix would then run twice per call.
             FeatureHost.Discover();

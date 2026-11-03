@@ -189,6 +189,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     [HarmonyPatch(typeof(Employee), nameof(Employee.SubmitNoWorkReason))]
     internal static class Awe_Fix5_SubmitNoWorkReason_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static void Prefix(Employee __instance, ref string reason, ref string fix)
         {
             if (!Rel.Enter(Fix5ClearReasons.FeatureName)) return;

@@ -95,6 +95,7 @@ namespace ActuallyWorkingEmployees.Features.World
     [HarmonyPatch(typeof(Employee), nameof(Employee.AssignProperty))]
     internal static class Awe_IdlePoints_AssignProperty_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static void Prefix(Il2CppScheduleOne.Property.Property prop, out Il2CppReferenceArray<Transform> __state)
         {
             __state = null;

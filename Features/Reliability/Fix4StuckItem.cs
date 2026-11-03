@@ -134,6 +134,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     [HarmonyPatch(typeof(MoveItem), nameof(MoveItem.Deactivate))]
     internal static class Awe_Fix4_MoveItemDeactivate_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static void Prefix(MoveItem __instance, out Fix4StuckItem.Carry __state)
         {
             __state = null;
@@ -152,6 +153,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     [HarmonyPatch(typeof(MoveItem), nameof(MoveItem.Disable))]
     internal static class Awe_Fix4_MoveItemDisable_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static void Prefix(MoveItem __instance, out Fix4StuckItem.Carry __state)
         {
             __state = null;

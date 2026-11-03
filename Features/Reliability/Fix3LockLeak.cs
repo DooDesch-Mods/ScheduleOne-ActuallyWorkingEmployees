@@ -297,6 +297,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     [HarmonyPatch(typeof(NpcBehaviour), nameof(NpcBehaviour.Disable))]
     internal static class Awe_Fix3_BehaviourDisable_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         // Active at the call: vanilla deactivates it and frees the locks itself. Otherwise the locks leak.
         private static void Prefix(NpcBehaviour __instance, out bool __state)
         {
@@ -328,6 +329,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     [HarmonyPatch(typeof(Employee), nameof(Employee.Fire))]
     internal static class Awe_Fix3_EmployeeFire_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static void Postfix(Employee __instance)
         {
             try
@@ -343,6 +345,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     [HarmonyPatch(typeof(SleepController), nameof(SleepController.RpcLogic___StartSleep_2166136261))]
     internal static class Awe_Fix3_StartSleep_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         // A second StartSleep during a running sleep is ignored by the game; only the call that begins one releases.
         private static void Prefix(SleepController __instance, out bool __state)
         {
@@ -367,6 +370,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     [HarmonyPatch(typeof(TimeManager), nameof(TimeManager.SkipToTimeAndSync), new Type[] { typeof(int) })]
     internal static class Awe_Fix3_SkipToTime_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static void Postfix()
         {
             try
