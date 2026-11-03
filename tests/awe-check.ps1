@@ -485,6 +485,12 @@ $rows.Add((New-Row 'app-phone' -Steps @(
     New-Step -Cmd 'awe app open' -Until 'awe app open: ' -Forbid 'Exception', 'refused to raise the phone' `
         -Expect "awe app open: phone raised, app 'awe' opened\.")))
 
+# -- rows of single features, one file per area: tests/rows/<area>.ps1 adds rows with $rows.Add((New-Row ...)) --
+foreach ($f in (Get-ChildItem (Join-Path $PSScriptRoot 'rows') -Filter *.ps1 -ErrorAction SilentlyContinue | Sort-Object Name)) {
+    try { . $f.FullName }
+    catch { Write-Host "FAIL rows-load: $($f.Name): $($_.Exception.Message)" }
+}
+
 # -- last: nothing in the whole run threw --
 $rows.Add((New-Row 'log-no-failed' -Steps @(
     New-Step -Log '[Failed]' -Forbid '\S'
