@@ -123,7 +123,8 @@ namespace ActuallyWorkingEmployees.Features.Diagnostics
             int cap = prop.EmployeeCapacity;
             if (cap > 0 && count > cap)
                 Add(f, Sev.Warning, "Capacity", where, count + " employees on a property rated for " + cap + ".",
-                    "Extra employees share idle spots.");
+                    Options.ShareIdlePoints.Value ? "Extra employees share idle spots."
+                        : "Extra employees get no idle spot (ShareIdlePoints is off).");
 
             var assigned = new HashSet<int>();
             var routeList = new List<AdvancedTransitRoute>();

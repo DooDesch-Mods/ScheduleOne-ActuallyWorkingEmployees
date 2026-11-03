@@ -30,17 +30,17 @@ namespace ActuallyWorkingEmployees.Features.Packaging
         internal const string FeatureName = "packager-routes";
         public string Name => FeatureName;
 
-        // A wait record that was not refreshed for this long belongs to an earlier episode and starts over.
-        private const float WaitFreshness = 15f;
-
         private enum Release { None, Pass, FullStack, Capacity, EndOfDay, Threshold, Timeout }
 
-        private sealed class Wait { internal float Start, LastSeen; }
+        // Start = first moment the load was held back. The record lives until the load leaves or the route has no
+        // load any more, so a packager that works on another route in between does not restart the timeout.
+        private sealed class Wait { internal float Start; internal int Pass; }
 
         private sealed class PackerState
         {
             internal readonly Dictionary<long, Wait> Waits = new Dictionary<long, Wait>();
-            internal int WaitFrame = -1, Pending, Need;
+            internal int WaitFrame = -1, Pending, Need, Pass;
+            internal string RoutesNoneKey;
             internal string DiagReason, DiagFix;
             internal float LastDiag = -1000f;
         }
@@ -96,11 +96,14 @@ namespace ActuallyWorkingEmployees.Features.Packaging
             var routes = p.configuration?.Routes?.Routes;
             if (routes == null)
             {
-                Core.WarnOnce("routes:none:" + p.GetInstanceID(), Rel.Name(p) + " has no route list; the game's route choice runs.");
+                PackerState noRoutes = StateOf(p);
+                noRoutes.RoutesNoneKey ??= "routes:none:" + p.GetInstanceID();
+                Core.WarnOnce(noRoutes.RoutesNoneKey, Rel.Name(p) + " has no route list; the game's route choice runs.");
                 return false;
             }
 
             PackerState st = StateOf(p);
+            st.Pass++;
             float now = Now;
             AdvancedTransitRoute best = null;
             ItemInstance bestItem = null;
@@ -116,6 +119,7 @@ namespace ActuallyWorkingEmployees.Features.Packaging
                 if (route == null) continue;
                 ItemInstance it = route.GetItemReadyToMove();
                 if (it == null) continue;
+                if (st.Waits.Count > 0 && st.Waits.TryGetValue(route.Pointer.ToInt64(), out Wait seen)) seen.Pass = st.Pass;
                 if (!p.Movement.CanGetTo(route.Source, 1f) || !p.Movement.CanGetTo(route.Destination, 1f)
                     || p.Inventory.GetCapacityForItem(it) <= 0) continue;
                 if (firstReady < 0) firstReady = i;
@@ -140,6 +144,8 @@ namespace ActuallyWorkingEmployees.Features.Packaging
                     best = route; bestItem = it; bestRelease = rel; bestScore = score; bestIndex = i;
                 }
             }
+
+            DropGoneWaits(p, st);
 
             if (best != null)
             {
@@ -186,18 +192,37 @@ namespace ActuallyWorkingEmployees.Features.Packaging
 
             long key = route.Pointer.ToInt64();
             st.Waits.TryGetValue(key, out Wait w);
-            if (w != null && now - w.LastSeen > WaitFreshness) w = null;
             if (w == null)
             {
                 if (!commit) return Release.None;
-                w = new Wait { Start = now };
+                w = new Wait { Start = now, Pass = st.Pass };
                 st.Waits[key] = w;
                 if (Options.LogBatchActivity.Value)
                     Core.Log?.Msg("[Batch] " + route.Source.Name + " -> " + route.Destination.Name + ": " + qty + " " + it.Name
                         + " ready, waiting for " + (need > 0 ? need.ToString() : "a full stack") + " (timeout " + (int)Options.BatchTimeoutSeconds.Value + " s).");
             }
-            if (commit) w.LastSeen = now;
             return now - w.Start >= Options.BatchTimeoutSeconds.Value ? Release.Timeout : Release.None;
+        }
+
+        private static readonly List<long> _goneKeys = new List<long>();
+
+        /// <summary>
+        /// Removes wait records of routes that had no load (or no longer exist) in the pass that just ran. Records of
+        /// routes that still hold a load stay, even while the packager serves another route.
+        /// </summary>
+        private static void DropGoneWaits(Packager p, PackerState st)
+        {
+            if (st.Waits.Count == 0) return;
+            _goneKeys.Clear();
+            foreach (var kv in st.Waits)
+                if (kv.Value.Pass != st.Pass) _goneKeys.Add(kv.Key);
+            foreach (long key in _goneKeys)
+            {
+                st.Waits.Remove(key);
+                if (Options.LogBatchActivity.Value)
+                    Core.Log?.Msg("[Batch] " + Rel.Name(p) + ": wait on a route dropped, it has no load any more.");
+            }
+            _goneKeys.Clear();
         }
 
         /// <summary>Books and logs a trip that left after a wait.</summary>

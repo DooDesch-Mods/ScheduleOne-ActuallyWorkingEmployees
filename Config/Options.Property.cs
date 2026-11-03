@@ -3,7 +3,7 @@ namespace ActuallyWorkingEmployees.Config
     public static partial class Options
     {
         public static readonly BoolOption EnableEmployeeCapacityOverride = new BoolOption("Property", "EnableEmployeeCapacityOverride",
-            "Override employees per property", "Uses the employee limit below for every property. Vanilla: off.",
+            "Override employees per property", "Uses the employee limit below for every property. Co-op guests without this mod get errors for employees beyond the property's idle spots. Vanilla: off.",
             false, hostOnly: true, balance: true);
 
         public static readonly IntOption EmployeeCapacity = new IntOption("Property", "EmployeeCapacity",

@@ -59,7 +59,7 @@ $rows.Add((New-Row 'route-diagnostics-options' -Finally 'awe reset packager.rout
     Step-Feature 'packager-routes' 'batch=\d threshold=\d+ mode=\w+ diag=1 ')))
 
 # -- shared idle points --
-$idleStat = 'on=\d shared=\d+ unchanged=\d+'
+$idleStat = 'on=\d role=\S+ shared=\d+ unchanged=\d+'
 $rows.Add((New-Row 'idle-points-share' -Finally 'awe reset property.shareidlepoints' -Steps @(
     Step-Feature 'idle-points' $idleStat
     Step-Dev 'awe idle' 'Idle' ('\d+ property\(ies\)\. ' + $idleStat) '.+'
@@ -85,7 +85,39 @@ $rows.Add((New-Row 'collision-employees' -Finally 'awe reset general.disableempl
     Step-Set 'general.disableemployeecollision' 'false' 'Off' 'Off'
     Step-Dev 'awe collision' 'Collision' 'employees=0 furniture=\d triggerEmployees=0 agents=0 avoidanceOff=0 ' -Also '\[collision\] employee collision restored on \d+ employee\(s\)')))
 
-$rows.Add((New-Row 'collision-furniture' -Finally 'awe reset general.disablefurniturecollision', 'awe collision' -Steps @(
+# A knocked-down employee must land on the floor and stand up again with employee collision off: only the root capsule
+# turns into a trigger, the ragdoll bones keep colliding. Falling through the world shows as a large negative dy.
+$rows.Add((New-Row 'collision-ragdoll' -Finally 'awe reset general.disableemployeecollision', 'awe collision' -Run {
+    param($Slot)
+    $r = Invoke-Awe -Slot $Slot -Cmd 'awe set general.disableemployeecollision true' -Until 'disableemployeecollision'
+    $r = Invoke-Awe -Slot $Slot -Cmd 'awe collision' -Until '\[Collision\] employees='
+    $r = Invoke-Awe -Slot $Slot -Cmd 'awe collision ragdoll' -Until '\[Collision\] ragdoll'
+    $start = $r.Texts | Where-Object { $_ -match '\[Collision\] ragdoll (.+) at y=(-?[\d.]+) capsuleTrigger=(\w+)' } | Select-Object -Last 1
+    if (-not $start) { return "no ragdoll line (no employee in the save?): $(($r.Texts | Select-Object -Last 2) -join ' | ')" }
+    if ($Matches[3] -ne 'True') { return "the capsule is not a trigger while collision is off: $start" }
+    $who = $Matches[1]
+    $last = ''; $wasDown = $false
+    $deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt $deadline) {
+        $p = Invoke-Awe -Slot $Slot -Cmd 'awe collision probe' -Until '\[Collision\] probe'
+        $last = $p.Texts | Where-Object { $_ -match '\[Collision\] probe .* ragdolled=(\w+) y=\S+ startY=\S+ dy=(-?[\d.]+) minHipDy=(\S+)' } | Select-Object -Last 1
+        if (-not $last) { return "no probe line: $(($p.Texts | Select-Object -Last 2) -join ' | ')" }
+        $down = $Matches[1] -eq 'True'; $dy = [double]$Matches[2]; $minHip = $Matches[3]
+        # A lying body keeps its hips a few cm above the floor; 1 m below where the employee stood is through it.
+        if ($minHip -ne 'none' -and [double]$minHip -lt -1) { return "$who fell through the floor: $last" }
+        if ($down) { $wasDown = $true }
+        elseif ($wasDown) {
+            if ([math]::Abs($dy) -gt 1.5) { return "$who stood up away from the floor: $last" }
+            Write-Host "  NOTE collision-ragdoll: $last"
+            return $null
+        }
+        $t = (Get-Date).AddSeconds(1); while ((Get-Date) -lt $t) { Start-Sleep -Milliseconds 200 }
+    }
+    if (-not $wasDown) { return "$who never went down: $last" }
+    "$who did not stand up within 30 s: $last"
+}))
+
+$rows.Add((New-Row 'collision-furniture'-Finally 'awe reset general.disablefurniturecollision', 'awe collision' -Steps @(
     Step-Set 'general.disablefurniturecollision' 'true' 'On' 'Off'
     Step-Dev 'awe collision' 'Collision' 'employees=\d furniture=1 triggerEmployees=\d+ agents=\d+ avoidanceOff=\d+ obstaclesOff=\d+ obstaclesSeen=\d+' -Check {
         param($r, $texts)

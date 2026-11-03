@@ -67,7 +67,7 @@ namespace ActuallyWorkingEmployees.Config
             0.3f, 0.05f, 1f, 0.05f, hostOnly: true, balance: true);
 
         public static readonly BoolOption BotanistUseSprinklers = new BoolOption("Botanist", "UseSprinklers",
-            "Leave sprinkler pots alone", "The botanist does not water pots a placed sprinkler covers. Vanilla: off.",
+            "Leave sprinkler pots alone", "The botanist skips pots whose sprinkler sprayed within the last 3 game hours. Vanilla: off.",
             false, hostOnly: true, balance: true);
     }
 }

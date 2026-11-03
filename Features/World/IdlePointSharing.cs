@@ -36,17 +36,24 @@ namespace ActuallyWorkingEmployees.Features.World
         public void Tick(float dt) { }
         public void Reset() { _shared = _unchanged = 0; }
 
-        public string Status => "on=" + (Options.ShareIdlePoints.Value ? 1 : 0) + " shared=" + _shared + " unchanged=" + _unchanged;
+        public string Status => "on=" + (Options.ShareIdlePoints.Value ? 1 : 0) + " role=" + Net.RoleText() + " shared=" + _shared + " unchanged=" + _unchanged;
 
         /// <summary>
         /// Prefix body. The array to put back after the call, or null when the original array already has a point for the
-        /// new employee (or sharing is off, or this is not the host).
+        /// new employee, or sharing is off on the host. Runs on the host and on a guest.
         /// </summary>
         internal static Il2CppReferenceArray<Transform> Extend(Il2CppScheduleOne.Property.Property prop)
         {
-            if (prop == null) return null;
-            if (!Options.ShareIdlePoints.Value) return null;
-            if (!Net.IsServer) return null;
+            if (prop == null) { Core.WarnOnce("idle:noprop", "idle: AssignProperty ran without a property; the game's assignment runs unchanged."); return null; }
+            // The host follows the option. A guest with the mod always extends: the host's employee count decides how
+            // many indices a guest reads (Employee.Initialize runs AssignProperty on every client, Employee.cs:757), and a
+            // guest that skipped the swap would throw at Employee.cs:223 exactly like the host without it.
+            bool guest = Net.IsClientOnly;
+            if (!guest)
+            {
+                if (!Options.ShareIdlePoints.Value) { Core.WarnOnce("idle:off", "idle: sharing is off; the game's assignment runs unchanged."); return null; }
+                if (!Net.IsServer) { Core.WarnOnce("idle:offline", "idle: neither host nor guest; the game's assignment runs unchanged."); return null; }
+            }
             var points = prop.EmployeeIdlePoints;
             var employees = prop.Employees;
             if (points == null || employees == null)
@@ -67,7 +74,10 @@ namespace ActuallyWorkingEmployees.Features.World
             for (int i = 0; i < need; i++) extended[i] = points[i % points.Length];
             prop.EmployeeIdlePoints = extended;
             _shared++;
-            Core.WarnOnce("idle:share:" + prop.GetInstanceID(), prop.name + ": " + need + " employees share " + points.Length + " idle point(s).");
+            Core.WarnOnce("idle:share:" + prop.GetInstanceID(), prop.name + ": " + need + " employees share " + points.Length + " idle point(s)" + (guest ? " (guest side)." : "."));
+            // A guest without AWE reads the same index from the unextended array and throws in Employee.Initialize.
+            if (!guest && Net.RemoteClients() > 0)
+                Core.WarnOnce("idle:vanilla-guest:" + prop.GetInstanceID(), prop.name + ": " + need + " employees but " + points.Length + " idle point(s) while guests are connected; a guest without AWE gets an IndexOutOfRange for the extra employee.");
             return points;
         }
 

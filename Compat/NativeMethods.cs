@@ -38,19 +38,53 @@ namespace ActuallyWorkingEmployees.Compat
             return a;
         }
 
+        // Il2CppInteropUtils.GetIl2CppMethodInfoPointerFieldForGeneratedMethod reads the NativeMethodInfoPtr_ field that the
+        // generated method body loads, so it tells overloads apart. Looked up by reflection: Il2CppInterop.Common is not a
+        // compile reference of this mod.
+        private static Func<MethodBase, FieldInfo> _fieldOf;
+        private static bool _fieldOfLooked;
+
+        private static FieldInfo InteropField(MethodBase m)
+        {
+            if (!_fieldOfLooked)
+            {
+                _fieldOfLooked = true;
+                try
+                {
+                    MethodInfo mi = Type.GetType("Il2CppInterop.Common.Il2CppInteropUtils, Il2CppInterop.Common")
+                        ?.GetMethod("GetIl2CppMethodInfoPointerFieldForGeneratedMethod", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(MethodBase) }, null);
+                    if (mi != null) _fieldOf = (Func<MethodBase, FieldInfo>)Delegate.CreateDelegate(typeof(Func<MethodBase, FieldInfo>), mi);
+                    else Note("[NativeMethods] Il2CppInteropUtils.GetIl2CppMethodInfoPointerFieldForGeneratedMethod not found; overloaded methods stay unresolved.", true);
+                }
+                catch (Exception e) { Note("[NativeMethods] Il2CppInteropUtils lookup failed, " + e.GetType().Name + ": " + e.Message + "; overloaded methods stay unresolved.", true); }
+            }
+            return _fieldOf?.Invoke(m);
+        }
+
         /// <summary>Like <see cref="Address"/>, but returns the reason instead of logging it. <paramref name="problem"/> is null on success.</summary>
         private static IntPtr TryAddress(MethodBase m, out string problem)
         {
             problem = null;
             Type t = m?.DeclaringType;
             if (t == null) { problem = "method without a declaring type, address not resolved."; return IntPtr.Zero; }
-            string prefix = "NativeMethodInfoPtr_" + m.Name + "_";
             FieldInfo found = null;
-            foreach (FieldInfo f in t.GetFields(BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly))
+            string interopProblem = null;
+            try { found = InteropField(m); }
+            catch (Exception e) { interopProblem = "Il2CppInterop field lookup failed, " + e.GetType().Name + ": " + e.Message; }
+            if (found == null)
             {
-                if (!f.Name.StartsWith(prefix, StringComparison.Ordinal)) continue;
-                if (found != null) { problem = t.Name + "." + m.Name + " has several overloads, address not resolved."; return IntPtr.Zero; }
-                found = f;
+                // Fallback by name: only unambiguous when the method has no overloads.
+                string prefix = "NativeMethodInfoPtr_" + m.Name + "_";
+                foreach (FieldInfo f in t.GetFields(BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly))
+                {
+                    if (!f.Name.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                    if (found != null)
+                    {
+                        problem = t.Name + "." + m.Name + " has several overloads, address not resolved" + (interopProblem != null ? " (" + interopProblem + ")" : "") + ".";
+                        return IntPtr.Zero;
+                    }
+                    found = f;
+                }
             }
             if (found == null) { problem = t.Name + "." + m.Name + " has no NativeMethodInfoPtr_ field, address not resolved."; return IntPtr.Zero; }
             IntPtr info = (IntPtr)found.GetValue(null);
@@ -62,7 +96,7 @@ namespace ActuallyWorkingEmployees.Compat
         /// Every interop method that a Harmony owner other than this mod has patched so far, by native address, with a
         /// description "Type.Method (owner, owner)". Methods whose address cannot be read are left out.
         /// </summary>
-        private static Dictionary<IntPtr, List<KeyValuePair<MethodBase, string>>> ForeignPatched()
+        private static Dictionary<IntPtr, List<KeyValuePair<MethodBase, string>>> ForeignPatched(bool includeOwn = false)
         {
             var map = new Dictionary<IntPtr, List<KeyValuePair<MethodBase, string>>>();
             foreach (MethodBase m in HarmonyLib.Harmony.GetAllPatchedMethods())
@@ -75,7 +109,7 @@ namespace ActuallyWorkingEmployees.Compat
                     if (info == null) continue;
                     var others = new List<string>();
                     foreach (string owner in info.Owners)
-                        if (owner != null && owner.IndexOf(OwnAssembly, StringComparison.OrdinalIgnoreCase) < 0) others.Add(owner);
+                        if (owner != null && (includeOwn || owner.IndexOf(OwnAssembly, StringComparison.OrdinalIgnoreCase) < 0)) others.Add(owner);
                     if (others.Count == 0) continue;
                     IntPtr a = TryAddress(m, out _);
                     if (a == IntPtr.Zero) continue;
@@ -88,19 +122,28 @@ namespace ActuallyWorkingEmployees.Compat
         }
 
         /// <summary>
-        /// False when <paramref name="m"/> shares its native address with a different method that another mod has already
-        /// patched: a second detour on that address overflows the stack. True when no such patch exists or the address is
-        /// unknown. Meant for a patch class's <c>Prepare(MethodBase)</c>. Logs one warning per refused method.
+        /// False when <paramref name="m"/> shares its native address with a different method that any mod (this one
+        /// included) has already patched: a second detour on that address overflows the stack. Also false when the address
+        /// cannot be read, because the method may share code with a patched one. Meant for a patch class's
+        /// <c>Prepare(MethodBase)</c>. Logs one warning per refused method.
         /// </summary>
         internal static bool AllowPatch(MethodBase m)
         {
-            IntPtr a = TryAddress(m, out _);
-            if (a == IntPtr.Zero) return true;
-            if (!ForeignPatched().TryGetValue(a, out var list)) return true;
+            string label = m?.DeclaringType?.Name + "." + m?.Name;
+            IntPtr a;
+            string problem;
+            try { a = TryAddress(m, out problem); }
+            catch (Exception e) { a = IntPtr.Zero; problem = "address read failed, " + e.GetType().Name + ": " + e.Message; }
+            if (a == IntPtr.Zero)
+            {
+                Note("[NativeMethods] " + label + " not patched, its native address is unknown (" + problem + ").", true);
+                return false;
+            }
+            if (!ForeignPatched(true).TryGetValue(a, out var list)) return true;
             foreach (var kv in list)
             {
                 if (kv.Key == m) continue;
-                Note("[NativeMethods] " + m.DeclaringType?.Name + "." + m.Name + " not patched: its native code at 0x" + a.ToString("X")
+                Note("[NativeMethods] " + label + " not patched: its native code at 0x" + a.ToString("X")
                     + " is already patched through " + kv.Value + ".", !IsHwe(kv.Value));
                 return false;
             }
@@ -134,7 +177,7 @@ namespace ActuallyWorkingEmployees.Compat
                     continue;
                 }
 
-                foreign ??= ForeignPatched();
+                foreign ??= ForeignPatched(true);
                 string other = null;
                 if (foreign.TryGetValue(a, out var patchedBy))
                     foreach (var kv in patchedBy)
@@ -169,22 +212,20 @@ namespace ActuallyWorkingEmployees.Compat
         {
             var byAddress = new Dictionary<IntPtr, List<string>>();
             var hweOnly = new Dictionary<IntPtr, bool>();
-            int checkedCount = 0;
+            int checkedCount = 0, unresolved = 0;
             foreach (MethodBase m in HarmonyLib.Harmony.GetAllPatchedMethods())
             {
-                FieldInfo f = null;
                 try
                 {
                     Type t = m.DeclaringType;
                     if (t == null || !typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase).IsAssignableFrom(t)) continue;
-                    string prefix = "NativeMethodInfoPtr_" + m.Name + "_";
-                    int hits = 0;
-                    foreach (FieldInfo cand in t.GetFields(BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly))
-                        if (cand.Name.StartsWith(prefix, StringComparison.Ordinal)) { f = cand; hits++; }
-                    if (hits != 1) continue;   // overloads: the field cannot be told apart by name
-                    IntPtr info = (IntPtr)f.GetValue(null);
-                    if (info == IntPtr.Zero) continue;
-                    IntPtr a = Marshal.ReadIntPtr(info);
+                    IntPtr a = TryAddress(m, out string problem);
+                    if (a == IntPtr.Zero)
+                    {
+                        unresolved++;
+                        if (Core.Verbose) Core.Log?.Msg("[NativeMethods] shared-address check skips " + t.Name + "." + m.Name + ": " + problem);
+                        continue;
+                    }
                     checkedCount++;
                     if (!byAddress.TryGetValue(a, out List<string> names)) byAddress[a] = names = new List<string>();
                     names.Add(t.Name + "." + m.Name);
@@ -208,7 +249,8 @@ namespace ActuallyWorkingEmployees.Compat
                 else
                     Core.Log?.Warning(head + "; each patch detours the same address and the game overflows its stack on the first call.");
             }
-            Core.Log?.Msg("[NativeMethods] " + checkedCount + " patched interop method(s) checked, " + shared + " shared native address(es).");
+            Core.Log?.Msg("[NativeMethods] " + checkedCount + " patched interop method(s) checked, " + shared + " shared native address(es)"
+                + (unresolved > 0 ? ", " + unresolved + " without a readable address." : "."));
         }
 
         private static int CountOf(IEnumerable<MethodBase> methods)

@@ -13,7 +13,8 @@ namespace ActuallyWorkingEmployees.Features.World
     /// <summary>
     /// Employees that walk through each other (DisableEmployeeCollision) and through furniture (DisableFurnitureCollision).
     ///
-    /// Employees: every collider under an employee becomes a trigger, its NavMeshAgent shrinks to a small radius, and
+    /// Employees: the root capsule of NPCMovement becomes a trigger (the ragdoll bone colliders stay solid, so a knocked
+    /// down employee still lands on the floor), its NavMeshAgent shrinks to a small radius, and
     /// obstacle avoidance goes off through NPCMovement.SetObstacleAvoidanceEnabled(false). Setting the agent's avoidance
     /// type alone does not hold: NPCMovement.UpdateObstacleAvoidance runs every 0.5 s on the host and puts the default
     /// type back whenever a player is within 25 m and the movement's own flag is on.
@@ -50,7 +51,7 @@ namespace ActuallyWorkingEmployees.Features.World
         public void Init()
         {
 #if DEBUG
-            DevConsole.Register("collision", "awe collision  (run both passes now and print what they hold)", Dev);
+            DevConsole.Register("collision", "awe collision [ragdoll|probe]  (run both passes now and print what they hold; ragdoll knocks one employee down, probe reports it)", Dev);
 #endif
         }
 
@@ -77,6 +78,9 @@ namespace ActuallyWorkingEmployees.Features.World
 
         public void Tick(float dt)
         {
+#if DEBUG
+            DevTrackHips();
+#endif
             float now = UnityEngine.Time.unscaledTime;
             bool emp = Options.DisableEmployeeCollision.Value;
             bool furn = Options.DisableFurnitureCollision.Value;
@@ -111,20 +115,17 @@ namespace ActuallyWorkingEmployees.Features.World
                         held.SetObstacleAvoidanceEnabled(false);
                     continue;
                 }
-                var changed = new List<UnityEngine.Collider>();
-                var colliders = e.GetComponentsInChildren<UnityEngine.Collider>(true);
-                for (int i = 0; i < colliders.Length; i++)
-                {
-                    var c = colliders[i];
-                    if (c == null || c.isTrigger) continue;
-                    c.isTrigger = true;
-                    changed.Add(c);
-                }
+                // Only the root capsule of NPCMovement. The ragdoll bones under the avatar carry their own colliders and
+                // Rigidbodies; as triggers a knocked-down employee falls through the floor and never gets up.
+                var changed = new List<UnityEngine.Collider>(1);
+                var movement = e.Movement;
+                UnityEngine.CapsuleCollider capsule = movement != null ? movement._capsuleCollider : null;
+                if (capsule == null) Core.WarnOnce("collision:nocapsule:" + id, Rel.Name(e) + " has no movement capsule; its collision stays vanilla.");
+                else if (!capsule.isTrigger) { capsule.isTrigger = true; changed.Add(capsule); }
                 _changedColliders[id] = changed;
 
                 var agent = e.GetComponent<NavMeshAgent>();
-                if (agent == null) { Core.WarnOnce("collision:noagent:" + id, Rel.Name(e) + " has no NavMeshAgent; only its colliders were changed."); continue; }
-                var movement = e.Movement;
+                if (agent == null) { Core.WarnOnce("collision:noagent:" + id, Rel.Name(e) + " has no NavMeshAgent; only its capsule was changed."); continue; }
                 _agents[id] = new AgentOriginal
                 {
                     Radius = agent.radius, Priority = agent.avoidancePriority, Avoidance = agent.obstacleAvoidanceType,
@@ -257,9 +258,17 @@ namespace ActuallyWorkingEmployees.Features.World
         }
 
 #if DEBUG
+        // The employee "awe collision ragdoll" knocked down, and where it stood, for "awe collision probe".
+        private static Employee _ragdolled;
+        private static UnityEngine.Vector3 _ragdollStart;
+        private static float _minHipY = float.MaxValue;
+
         private static void Dev(string[] args)
         {
             if (!DevConsole.RequireHost("collision")) return;
+            string sub = args.Length > 0 ? args[0].ToLowerInvariant() : "";
+            if (sub == "ragdoll") { DevRagdoll(); return; }
+            if (sub == "probe") { DevProbe(); return; }
             foreach (IFeature f in FeatureHost.All)
             {
                 if (!(f is EmployeeCollision c)) continue;
@@ -271,6 +280,47 @@ namespace ActuallyWorkingEmployees.Features.World
                 return;
             }
             Core.Log?.Warning("[Dev] [Collision] the feature is not registered.");
+        }
+
+        /// <summary>Knocks the first employee down through the vanilla ragdoll path, like a punch with a small push.</summary>
+        private static void DevRagdoll()
+        {
+            Employee target = null;
+            foreach (Employee e in Rel.Employees()) { if (e != null && e.Movement != null && e.Avatar != null && !e.Avatar.Ragdolled) { target = e; break; } }
+            if (target == null) { Core.Log?.Warning("[Dev] [Collision] ragdoll: no standing employee found."); return; }
+            _ragdolled = target;
+            _ragdollStart = target.transform.position;
+            _minHipY = float.MaxValue;
+            UnityEngine.Vector3 dir = target.transform.forward;
+            target.Movement.ActivateRagdoll_Server(_ragdollStart + UnityEngine.Vector3.up, dir, 5f);
+            Core.Log?.Msg("[Dev] [Collision] ragdoll " + Rel.Name(target) + " at y=" + _ragdollStart.y.ToString("0.00")
+                + " capsuleTrigger=" + (target.Movement._capsuleCollider != null && target.Movement._capsuleCollider.isTrigger));
+        }
+
+        /// <summary>Lowest hip height of the knocked-down employee while it lies, sampled every frame. The avatar root does not
+        /// move with the ragdoll; only the bones do, so the hip bone is what falls through a floor.</summary>
+        private static void DevTrackHips()
+        {
+            if (_ragdolled == null) return;
+            var avatar = _ragdolled.Avatar;
+            if (avatar == null || !avatar.Ragdolled || avatar.HipBone == null) return;
+            float y = avatar.HipBone.position.y;
+            if (y < _minHipY) _minHipY = y;
+        }
+
+        /// <summary>Where the knocked-down employee is now. Lying: the hip bone. Standing: the avatar, which vanilla realigns
+        /// to the hips when it gets up. minHipDy is the lowest hip height since the knock, against where it stood.</summary>
+        private static void DevProbe()
+        {
+            if (_ragdolled == null) { Core.Log?.Warning("[Dev] [Collision] probe: run 'awe collision ragdoll' first."); return; }
+            var avatar = _ragdolled.Avatar;
+            if (avatar == null) { Core.Log?.Warning("[Dev] [Collision] probe: " + Rel.Name(_ragdolled) + " has no avatar."); return; }
+            bool down = avatar.Ragdolled;
+            UnityEngine.Vector3 p = down && avatar.HipBone != null ? avatar.HipBone.position : avatar.transform.position;
+            string minHip = _minHipY == float.MaxValue ? "none" : (_minHipY - _ragdollStart.y).ToString("0.00");
+            Core.Log?.Msg("[Dev] [Collision] probe " + Rel.Name(_ragdolled) + " ragdolled=" + down + " y=" + p.y.ToString("0.00")
+                + " startY=" + _ragdollStart.y.ToString("0.00") + " dy=" + (p.y - _ragdollStart.y).ToString("0.00")
+                + " minHipDy=" + minHip);
         }
 #endif
     }
