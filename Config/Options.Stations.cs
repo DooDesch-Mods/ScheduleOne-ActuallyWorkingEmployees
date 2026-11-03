@@ -35,7 +35,7 @@ namespace ActuallyWorkingEmployees.Config
             10, 1, 20, 1, hostOnly: true, balance: true);
 
         public static readonly BoolOption ShowStationSpeedWarning = new BoolOption("Stations", "ShowStationSpeedWarning",
-            "Warn about saved mixes", "Shows a hint that saved mixes keep their old time after a speed change.",
+            "Warn about saved mixes", "Shows a hint on the Stations page that saved mixes and running stations keep their old time after a speed change.",
             true, hostOnly: false, balance: false);
     }
 }
