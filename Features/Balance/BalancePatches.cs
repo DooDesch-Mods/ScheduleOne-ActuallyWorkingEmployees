@@ -169,6 +169,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
     [HarmonyPatch(typeof(WaterPotBehaviour), nameof(WaterPotBehaviour.AreTaskConditionsMetForContainer), new Type[] { typeof(GrowContainer), typeof(float) })]
     internal static class Awe_WaterThreshold_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static bool Prefix(GrowContainer container, ref float wateringThreshold, ref bool __result)
         {
             DurationPatches.Threshold(ref wateringThreshold);
@@ -189,6 +190,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
     [HarmonyPatch(typeof(DryingRack), nameof(DryingRack.GetDryMultiplier))]
     internal static class Awe_DryingRack_Speed_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static void Postfix(ref float __result)
         {
             if (!Net.IsServer) return;
@@ -207,6 +209,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
     [HarmonyPatch(typeof(OvenCookOperation), nameof(OvenCookOperation.GetCookDuration))]
     internal static class Awe_LabOven_Speed_Patch
     {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
         private static void Postfix(ref int __result)
         {
             if (!Net.IsServer) return;
