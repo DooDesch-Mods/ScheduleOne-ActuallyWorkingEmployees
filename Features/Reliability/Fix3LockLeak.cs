@@ -173,15 +173,17 @@ namespace ActuallyWorkingEmployees.Features.Reliability
 
         private static void Postfix(NpcBehaviour __instance, bool __state)
         {
+            if (__state) return;   // was active: vanilla freed the locks itself
+            if (!Rel.Enter("fix3.disable")) return;
             try
             {
-                if (__state) return;
                 if (!Rel.Gate(Fix3LockLeak.FeatureName, Options.FixLockLeak.Value)) return;
                 Employee emp = __instance.Npc?.TryCast<Employee>();
                 if (emp == null) return;
                 Fix3LockLeak.ReleaseEmployee(emp, "behaviour " + Rel.TypeName(__instance) + " disabled while not active");
             }
             catch (Exception e) { Core.Failed("fix3: Behaviour.Disable postfix", e); }
+            finally { Rel.Leave("fix3.disable"); }
         }
     }
 

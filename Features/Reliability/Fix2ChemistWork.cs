@@ -90,12 +90,19 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             float idle = Time.time - since;
             if (!force && idle < Options.ChemistIdleTimeout.Value) return;
 
-            _idleSince.Remove(id);
-            foreach (NpcBehaviour b in stale) b.Disable_Networked(null);
-            _resets++;
-            string line = "[Fix2] reset " + Rel.Name(c) + ": " + stale.Count + " task(s) enabled but none running for " + idle.ToString("F1") + " s ("
-                + string.Join(", ", stale.ConvertAll(Rel.TypeName)) + ").";
-            if (force) Core.Log?.Msg(line); else Rel.Action("fix2.reset", line);
+            // The reset disables behaviours, which runs vanilla and the lock-release hook; a nested reset is skipped.
+            if (!Rel.Enter("fix2.reset")) return;
+            try
+            {
+                _idleSince.Remove(id);
+                string line = "[Fix2] reset " + Rel.Name(c) + ": " + stale.Count + " task(s) enabled but none running for " + idle.ToString("F1") + " s ("
+                    + string.Join(", ", stale.ConvertAll(Rel.TypeName)) + ").";
+                // Logged before the disable calls so a crash inside them leaves this line as the last trace.
+                if (force) Core.Log?.Msg(line); else Rel.Action("fix2.reset", line);
+                foreach (NpcBehaviour b in stale) b.Disable_Networked(null);
+                _resets++;
+            }
+            finally { Rel.Leave("fix2.reset"); }
         }
 
 #if DEBUG
@@ -127,8 +134,10 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     {
         private static void Postfix(Chemist __instance, ref bool __result)
         {
+            if (!Rel.Enter("fix2.isanywork")) return;
             try { Fix2ChemistWork.Apply(__instance, ref __result); }
             catch (Exception e) { Core.Failed("fix2: IsAnyWorkInProgress postfix", e); }
+            finally { Rel.Leave("fix2.isanywork"); }
         }
     }
 }

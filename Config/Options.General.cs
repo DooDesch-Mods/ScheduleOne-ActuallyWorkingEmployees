@@ -15,7 +15,7 @@ namespace ActuallyWorkingEmployees.Config
             false, hostOnly: true, balance: false);
 
         public static readonly BoolOption WarnOnHwe = new BoolOption("General", "WarnOnHwe",
-            "Warn about Harder Working Employees", "Logs a warning when Harder Working Employees is loaded next to this mod.",
+            "Warn about Harder Working Employees", "Logs a warning when Harder Working Employees is still in the Mods folder. This mod replaces it.",
             true, hostOnly: false, balance: false);
 
         public static readonly BoolOption VerboseLogging = new BoolOption("General", "VerboseLogging",

@@ -69,6 +69,23 @@ namespace ActuallyWorkingEmployees.Features.Reliability
 
         internal static void ResetActionCounts() { _counts.Clear(); }
 
+        [ThreadStatic] private static HashSet<string> _inside;
+
+        /// <summary>
+        /// Marks hook <paramref name="key"/> as running on this thread. False (and one warning per key) when it already
+        /// runs, i.e. the hook was re-entered: the caller then skips its own logic and lets the game's code continue.
+        /// Every true result must be paired with <see cref="Leave"/> in a finally block.
+        /// </summary>
+        internal static bool Enter(string key)
+        {
+            _inside ??= new HashSet<string>();
+            if (_inside.Add(key)) return true;
+            Core.WarnOnce("reentry:" + key, "hook '" + key + "' was entered again while it was still running; the nested call is passed through unchanged.");
+            return false;
+        }
+
+        internal static void Leave(string key) { _inside?.Remove(key); }
+
         /// <summary>The employees the manager knows. Null when the manager does not exist yet.</summary>
         internal static List<Employee> Employees()
         {

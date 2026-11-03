@@ -82,6 +82,9 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             _cache[(Key)key] = new Entry { Result = result, Until = Time.time + Options.ReachabilityCacheSeconds.Value };
         }
 
+        /// <summary>Per-call state from prefix to postfix: the cache key of a miss. A null state means the reentry guard bypassed the call.</summary>
+        internal sealed class Call { internal object Key; }
+
         internal static long Target(Vector3 v) { return Quantize(v); }
         internal static long Target(ITransitEntity e) { return e == null ? 0 : e.Pointer.ToInt64(); }
 
@@ -123,22 +126,28 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             return AccessTools.DeclaredMethod(typeof(NPCMovement), nameof(NPCMovement.CanGetTo), new Type[] { typeof(Vector3), typeof(float) });
         }
 
-        private static bool Prefix(NPCMovement __instance, Vector3 position, float proximityReq, ref bool __result, out object __state)
+        private const string Guard = "fix6.cangetto.position";
+
+        private static bool Prefix(NPCMovement __instance, Vector3 position, float proximityReq, ref bool __result, out Fix6ReachCache.Call __state)
         {
             __state = null;
+            if (!Rel.Enter(Guard)) return true;
+            __state = new Fix6ReachCache.Call();
             try
             {
                 if (Fix6ReachCache.TryGet(__instance, Fix6ReachCache.Target(position), proximityReq, out bool cached, out object key)) { __result = cached; return false; }
-                __state = key;
+                __state.Key = key;
             }
             catch (Exception e) { Core.Failed("fix6: CanGetTo(Vector3) prefix", e); }
             return true;
         }
 
-        private static void Postfix(bool __result, object __state)
+        private static void Postfix(bool __result, Fix6ReachCache.Call __state)
         {
-            try { Fix6ReachCache.Store(__state, __result); }
+            if (__state == null) return;
+            try { Fix6ReachCache.Store(__state.Key, __result); }
             catch (Exception e) { Core.Failed("fix6: CanGetTo(Vector3) postfix", e); }
+            finally { Rel.Leave(Guard); }
         }
     }
 
@@ -151,22 +160,29 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             return AccessTools.DeclaredMethod(typeof(NPCMovement), nameof(NPCMovement.CanGetTo), new Type[] { typeof(ITransitEntity), typeof(float) });
         }
 
-        private static bool Prefix(NPCMovement __instance, ITransitEntity destination, float proximityReq, ref bool __result, out object __state)
+        private const string Guard = "fix6.cangetto.entity";
+
+        // Parameter names must match the interop signature CanGetTo(ITransitEntity entity, float proximityReq).
+        private static bool Prefix(NPCMovement __instance, ITransitEntity entity, float proximityReq, ref bool __result, out Fix6ReachCache.Call __state)
         {
             __state = null;
+            if (!Rel.Enter(Guard)) return true;
+            __state = new Fix6ReachCache.Call();
             try
             {
-                if (Fix6ReachCache.TryGet(__instance, Fix6ReachCache.Target(destination), proximityReq, out bool cached, out object key)) { __result = cached; return false; }
-                __state = key;
+                if (Fix6ReachCache.TryGet(__instance, Fix6ReachCache.Target(entity), proximityReq, out bool cached, out object key)) { __result = cached; return false; }
+                __state.Key = key;
             }
             catch (Exception e) { Core.Failed("fix6: CanGetTo(ITransitEntity) prefix", e); }
             return true;
         }
 
-        private static void Postfix(bool __result, object __state)
+        private static void Postfix(bool __result, Fix6ReachCache.Call __state)
         {
-            try { Fix6ReachCache.Store(__state, __result); }
+            if (__state == null) return;
+            try { Fix6ReachCache.Store(__state.Key, __result); }
             catch (Exception e) { Core.Failed("fix6: CanGetTo(ITransitEntity) postfix", e); }
+            finally { Rel.Leave(Guard); }
         }
     }
 }

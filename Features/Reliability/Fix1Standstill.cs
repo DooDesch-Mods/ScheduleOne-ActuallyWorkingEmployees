@@ -189,8 +189,11 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     {
         private static void Postfix(NpcBehaviour __instance, NPCMovement.WalkResult result)
         {
+            // The warp inside OnWalkResult can end a walk and call back into WalkCallback.
+            if (!Rel.Enter("fix1.walkcallback")) return;
             try { Fix1Standstill.OnWalkResult(__instance, result, false); }
             catch (Exception e) { Core.Failed("fix1: WalkCallback postfix", e); }
+            finally { Rel.Leave("fix1.walkcallback"); }
         }
     }
 }

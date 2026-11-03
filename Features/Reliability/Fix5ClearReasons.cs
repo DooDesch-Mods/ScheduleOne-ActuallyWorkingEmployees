@@ -145,8 +145,10 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     {
         private static void Prefix(Employee __instance, ref string reason, ref string fix)
         {
+            if (!Rel.Enter(Fix5ClearReasons.FeatureName)) return;
             try { Fix5ClearReasons.Rewrite(__instance, ref reason, ref fix); }
             catch (Exception e) { Core.Failed("fix5: SubmitNoWorkReason prefix", e); }
+            finally { Rel.Leave(Fix5ClearReasons.FeatureName); }
         }
     }
 }
