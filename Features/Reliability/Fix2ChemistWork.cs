@@ -41,7 +41,9 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         /// <summary>Postfix body: true when the cauldron behaviour is running although the vanilla check said no.</summary>
         internal static void Apply(Chemist chemist, ref bool result)
         {
-            if (result || !Options.FixChemistWorkInProgress.Value) return;
+            if (result) return;
+            // Host only: a client's answer feeds nothing, and the host decides what the chemist does next.
+            if (!Rel.Gate(FeatureName, Options.FixChemistWorkInProgress.Value)) return;
             var cauldron = chemist.StartCauldronBehaviour;
             if (cauldron == null || !cauldron.Active) return;
             result = true;
@@ -54,8 +56,10 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             _next = Time.time + 1f;
             if (!Rel.Gate(FeatureName, Options.FixChemistWorkInProgress.Value)) return;
 
-            foreach (Employee emp in Rel.Employees())
+            Rel.EmployeesInto(_employees);
+            for (int n = 0; n < _employees.Count; n++)
             {
+                Employee emp = _employees[n];
                 try
                 {
                     Chemist c = emp.TryCast<Chemist>();
@@ -65,9 +69,14 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             }
         }
 
+        private static readonly List<Employee> _employees = new List<Employee>();
+        private static readonly List<NpcBehaviour> _stale = new List<NpcBehaviour>();
+
+        /// <summary>Fills the shared buffer with the enabled work behaviours of the chemist.</summary>
         private static List<NpcBehaviour> EnabledWork(Chemist c)
         {
-            var result = new List<NpcBehaviour>();
+            var result = _stale;
+            result.Clear();
             var enabled = c.Behaviour.enabledBehaviours;
             if (enabled == null) return result;
             for (int i = 0; i < enabled.Count; i++)
@@ -99,7 +108,14 @@ namespace ActuallyWorkingEmployees.Features.Reliability
                     + string.Join(", ", stale.ConvertAll(Rel.TypeName)) + ").";
                 // Logged before the disable calls so a crash inside them leaves this line as the last trace.
                 if (force) Core.Log?.Msg(line); else Rel.Action("fix2.reset", line);
-                foreach (NpcBehaviour b in stale) b.Disable_Networked(null);
+                // The disables change the enabled list, so they run on a copy. Fix 3 sees them as one batch: one lock release
+                // for the chemist instead of one scan of all placed items per behaviour.
+                int count = stale.Count;
+                var todo = new NpcBehaviour[count];
+                stale.CopyTo(todo);
+                Fix3LockLeak.BeginBatch();
+                try { for (int i = 0; i < count; i++) todo[i].Disable_Networked(null); }
+                finally { Fix3LockLeak.EndBatch(c, "idle reset of " + count + " task(s)"); }
                 _resets++;
             }
             finally { Rel.Leave("fix2.reset"); }

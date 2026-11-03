@@ -4,6 +4,7 @@ using HarmonyLib;
 using Il2CppFishNet.Object;
 using Il2CppScheduleOne.EntityFramework;
 using Il2CppScheduleOne.GameTime;
+using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.Management;
 using Il2CppScheduleOne.ObjectScripts;
 using ActuallyWorkingEmployees.Config;
@@ -35,17 +36,24 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         public void Init()
         {
 #if DEBUG
-            DevConsole.Register("lockleak", "awe lockleak [release]  (locks held by employees / free them now)", Dev);
+            DevConsole.Register("lockleak", "awe lockleak [release|probe]  (locks held by employees / free them now / disable an idle task of a working employee)", Dev);
 #endif
         }
 
-        public void Reset() { }
+        public void Reset() { _pending.Clear(); }
 
         public string Status =>
             "on=" + (Options.FixLockLeak.Value ? 1 : 0) + (Options.SleepSafeRelease.Value ? 1 : 0)
-            + " sweeps=" + _sweeps + " stationLocks=" + _stationLocks + " slotLocks=" + _slotLocks + " sleepReleases=" + _sleepReleases;
+            + " sweeps=" + _sweeps + " stationLocks=" + _stationLocks + " slotLocks=" + _slotLocks + " sleepReleases=" + _sleepReleases
+            + " deferred=" + _deferred + " pending=" + _pending.Count;
 
-        public void Tick(float dt) { }
+        public void Tick(float dt)
+        {
+            if (_pending.Count == 0 || Time.time < _nextPending) return;
+            _nextPending = Time.time + 1f;
+            try { ReleasePending(); }
+            catch (Exception e) { Core.Failed("fix3: release deferred employees", e); }
+        }
 
         /// <summary>Every placed item of every property and business, each once.</summary>
         private static List<BuildableItem> PlacedItems()
@@ -99,17 +107,110 @@ namespace ActuallyWorkingEmployees.Features.Reliability
                     if (!countOnly) usable.SetNPCUser(null);
                 }
                 ITransitEntity entity = item.TryCast<ITransitEntity>();
-                var inputs = entity?.InputSlots;
-                if (inputs == null) continue;
-                bool held = false;
-                for (int i = 0; i < inputs.Count; i++)
+                if (entity == null) continue;
+                var inputs = entity.InputSlots;
+                bool heldInput = false;
+                if (inputs != null)
                 {
-                    var lk = inputs[i]?.ActiveLock;
-                    if (lk != null && lk.LockOwner != null && lk.LockOwner.Pointer == mine.Pointer) { slotLocks++; held = true; }
+                    for (int i = 0; i < inputs.Count; i++)
+                        if (OwnedBy(inputs[i], mine)) { slotLocks++; heldInput = true; }
                 }
-                if (held && !countOnly) entity.RemoveSlotLocks(mine);
+                // RemoveSlotLocks only walks the input slots; a lock on an output slot is removed slot by slot. A slot
+                // listed on both sides was counted with the inputs.
+                var outputs = entity.OutputSlots;
+                if (outputs != null)
+                {
+                    for (int i = 0; i < outputs.Count; i++)
+                    {
+                        ItemSlot slot = outputs[i];
+                        if (!OwnedBy(slot, mine) || ContainsSlot(inputs, slot)) continue;
+                        slotLocks++;
+                        if (!countOnly) slot.RemoveLock(false);
+                    }
+                }
+                if (heldInput && !countOnly) entity.RemoveSlotLocks(mine);
             }
             return stations;
+        }
+
+        private static bool OwnedBy(ItemSlot slot, NetworkObject owner)
+        {
+            var lk = slot?.ActiveLock;
+            return lk != null && lk.LockOwner != null && lk.LockOwner.Pointer == owner.Pointer;
+        }
+
+        private static bool ContainsSlot(Il2CppSystem.Collections.Generic.List<ItemSlot> list, ItemSlot slot)
+        {
+            if (list == null) return false;
+            for (int i = 0; i < list.Count; i++)
+                if (list[i] != null && list[i].Pointer == slot.Pointer) return true;
+            return false;
+        }
+
+        // Employees whose release waits until none of their other behaviours hold locks.
+        private static readonly List<Employee> _pending = new List<Employee>();
+        private float _nextPending;
+        private static int _deferred;
+
+        /// <summary>
+        /// True when one of the employee's behaviours other than <paramref name="except"/> is running or paused. Its station
+        /// and slot locks are in use, and a lock records the employee, not the behaviour, so it cannot be told apart from a leak.
+        /// </summary>
+        internal static bool OtherBehaviourHoldsLocks(Employee emp, NpcBehaviour except)
+        {
+            var beh = emp.Behaviour;
+            if (beh == null) return false;
+            IntPtr skip = except == null ? IntPtr.Zero : except.Pointer;
+            NpcBehaviour active = beh.activeBehaviour;
+            if (active != null && active.Pointer != skip && active.Active) return true;
+            var enabled = beh.enabledBehaviours;
+            if (enabled == null) return false;
+            for (int i = 0; i < enabled.Count; i++)
+            {
+                NpcBehaviour b = enabled[i];
+                if (b == null || b.Pointer == skip) continue;
+                if ((b.Active || b.Started) && Rel.IsWork(b)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// True while a caller disables several behaviours of one employee in a row. The disable hook then skips its own
+        /// release and the caller finishes with a single <see cref="EndBatch"/>, so the placed items are walked once.
+        /// </summary>
+        internal static bool Batching { get; private set; }
+
+        internal static void BeginBatch() { Batching = true; }
+
+        internal static void EndBatch(Employee emp, string why)
+        {
+            Batching = false;
+            if (!Rel.Gate(FeatureName, Options.FixLockLeak.Value)) return;
+            if (OtherBehaviourHoldsLocks(emp, null)) { Defer(emp, null); return; }
+            ReleaseEmployee(emp, why);
+        }
+
+        /// <summary>Remembers an employee whose leaked locks cannot be freed yet; <see cref="Tick"/> frees them once it holds no task.</summary>
+        internal static void Defer(Employee emp, NpcBehaviour ended)
+        {
+            _deferred++;
+            for (int i = 0; i < _pending.Count; i++)
+                if (_pending[i].Pointer == emp.Pointer) return;
+            _pending.Add(emp);
+            Rel.Action("fix3.defer", "[Fix3] " + Rel.Name(emp) + " keeps its locks: " + (ended == null ? "a batch of disabled tasks" : Rel.TypeName(ended) + " was disabled")
+                + " while another task of the employee is running; they are freed when it is idle.");
+        }
+
+        private static void ReleasePending()
+        {
+            for (int i = _pending.Count - 1; i >= 0; i--)
+            {
+                Employee emp = _pending[i];
+                if (Rel.IsGone(emp)) { _pending.RemoveAt(i); Core.Log?.Warning("[Fix3] a deferred employee no longer exists, its release is dropped."); continue; }
+                if (OtherBehaviourHoldsLocks(emp, null)) continue;
+                _pending.RemoveAt(i);
+                ReleaseEmployee(emp, "task finished after a disabled task left locks");
+            }
         }
 
         /// <summary>Releases one employee's locks and logs one line when something was freed.</summary>
@@ -143,6 +244,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         private static void Dev(string[] args)
         {
             if (!DevConsole.RequireHost("lockleak")) return;
+            if (args.Length > 0 && args[0].Equals("probe", StringComparison.OrdinalIgnoreCase)) { Probe(); return; }
             bool release = args.Length > 0 && args[0].Equals("release", StringComparison.OrdinalIgnoreCase);
             List<BuildableItem> items = PlacedItems();
             int total = 0;
@@ -155,6 +257,38 @@ namespace ActuallyWorkingEmployees.Features.Reliability
                     + " active=" + Rel.TypeName(emp.Behaviour?.activeBehaviour));
             }
             Core.Log?.Msg("[Dev] [Fix3] " + items.Count + " placed item(s), " + total + " lock(s) " + (release ? "released" : "held") + ". " + new Fix3LockLeak().Status);
+        }
+
+        /// <summary>
+        /// Takes an employee that works a task and holds locks, disables a work behaviour of that employee that is neither
+        /// running nor started, and compares the locks before and after. The disable runs the same hook as the game's own.
+        /// </summary>
+        private static void Probe()
+        {
+            List<BuildableItem> items = PlacedItems();
+            foreach (Employee emp in Rel.Employees())
+            {
+                NpcBehaviour active = emp.Behaviour?.activeBehaviour;
+                if (active == null || !active.Active || !Rel.IsWork(active)) continue;
+                int sb = ReleaseFor(emp, items, true, out int lb);
+                if (sb + lb == 0) continue;
+
+                NpcBehaviour other = null;
+                foreach (NpcBehaviour b in emp.GetComponentsInChildren<NpcBehaviour>(true))
+                {
+                    if (b.Pointer == active.Pointer || b.Active || b.Started || !Rel.IsWork(b)) continue;
+                    other = b;
+                    break;
+                }
+                if (other == null) { Core.Log?.Warning("[Dev] [Fix3] probe " + Rel.Name(emp) + ": no idle work behaviour to disable."); continue; }
+
+                other.Disable();
+                int sa = ReleaseFor(emp, items, true, out int la);
+                Core.Log?.Msg("[Dev] [Fix3] probe " + Rel.Name(emp) + ": active=" + Rel.TypeName(active) + " disabled=" + Rel.TypeName(other)
+                    + " locksBefore=" + sb + "/" + lb + " locksAfter=" + sa + "/" + la + " " + (sa >= sb && la >= lb ? "HELD" : "LOST"));
+                return;
+            }
+            Core.Log?.Warning("[Dev] [Fix3] probe: no employee holds locks while working a task.");
         }
 #endif
     }
@@ -174,12 +308,15 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         private static void Postfix(NpcBehaviour __instance, bool __state)
         {
             if (__state) return;   // was active: vanilla freed the locks itself
+            if (Fix3LockLeak.Batching) return;   // the caller releases once after its last disable
             if (!Rel.Enter("fix3.disable")) return;
             try
             {
                 if (!Rel.Gate(Fix3LockLeak.FeatureName, Options.FixLockLeak.Value)) return;
                 Employee emp = __instance.Npc?.TryCast<Employee>();
-                if (emp == null) return;
+                if (emp == null) { Rel.MsgOnce("fix3:notemployee:" + Rel.TypeName(__instance), "[" + Fix3LockLeak.FeatureName + "] " + Rel.TypeName(__instance) + " belongs to an NPC that is no employee, no locks to release."); return; }
+                // A running or paused task of the same employee owns the locks that exist now.
+                if (Fix3LockLeak.OtherBehaviourHoldsLocks(emp, __instance)) { Fix3LockLeak.Defer(emp, __instance); return; }
                 Fix3LockLeak.ReleaseEmployee(emp, "behaviour " + Rel.TypeName(__instance) + " disabled while not active");
             }
             catch (Exception e) { Core.Failed("fix3: Behaviour.Disable postfix", e); }

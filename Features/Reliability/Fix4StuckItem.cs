@@ -26,6 +26,9 @@ namespace ActuallyWorkingEmployees.Features.Reliability
 
         private static int _returned, _sourceFull, _inspected;
 
+        /// <summary>True while MoveItemBehaviour.Disable runs; the Deactivate it calls is then handled by the Disable hook.</summary>
+        internal static bool InDisable;
+
         public void Init()
         {
 #if DEBUG
@@ -44,6 +47,8 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         {
             if (!Rel.Gate(FeatureName, Options.FixStuckInventoryItem.Value)) return null;
             if (b.assignedRoute == null || b.itemToRetrieveTemplate == null || b.grabbedAmount <= 0) return null;
+            // Disable runs Deactivate itself: its own hook already holds the state, the nested pair must not return a second time.
+            if (InDisable) return null;
             return new Carry { Route = b.assignedRoute, Template = b.itemToRetrieveTemplate, Grabbed = b.grabbedAmount };
         }
 
@@ -55,12 +60,27 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             if (npc == null || npc.Inventory == null) { Rel.MsgOnce("fix4:noinv", "[" + FeatureName + "] a mover has no NPC inventory, nothing returned."); return; }
             _inspected++;
 
-            ItemInstance carried = npc.Inventory.GetFirstIdenticalItem(c.Template);
-            if (carried == null) return;   // delivered or returned by vanilla
+            // Everything the inventory holds that stacks with the template, over all slots; delivered or returned by vanilla
+            // leaves none of it, which is the normal end and needs no line.
+            var slots = npc.Inventory.ItemSlots;
+            ItemInstance carried = null;
+            int total = 0;
+            for (int i = 0; i < slots.Count; i++)
+            {
+                ItemSlot slot = slots[i];
+                if (slot == null || slot.ItemInstance == null || slot.Quantity <= 0 || !slot.ItemInstance.CanStackWith(c.Template, false)) continue;
+                if (carried == null) carried = slot.ItemInstance;
+                total += slot.Quantity;
+            }
+            if (carried == null) return;
 
-            int amount = Math.Min(c.Grabbed, carried.Quantity);
+            int amount = Math.Min(c.Grabbed, total);
             ITransitEntity source = c.Route.Source;
-            if (source == null) { Core.Log?.Warning("[Fix4] " + Rel.Name(npc) + " carries " + amount + "x " + carried.Name + " but the route has no source."); return; }
+            if (Rel.IsGone(source) || source.IsDestroyed)
+            {
+                Core.Log?.Warning("[Fix4] " + Rel.Name(npc) + " carries " + amount + "x " + carried.Name + " but the route's source no longer exists; the item stays.");
+                return;
+            }
 
             ItemInstance copy = carried.GetCopy(amount);
             if (source.GetOutputCapacityForItem(copy, npc) < amount)
@@ -70,14 +90,15 @@ namespace ActuallyWorkingEmployees.Features.Reliability
                 return;
             }
 
-            // Take the amount out of the slot that holds it, then hand the copy to the source.
-            var slots = npc.Inventory.ItemSlots;
-            for (int i = 0; i < slots.Count; i++)
+            // Take the amount out of the stacks that hold it, then hand the copy to the source.
+            int left = amount;
+            for (int i = 0; i < slots.Count && left > 0; i++)
             {
                 ItemSlot slot = slots[i];
-                if (slot == null || slot.ItemInstance == null || slot.ItemInstance.Pointer != carried.Pointer) continue;
-                slot.ChangeQuantity(-amount);
-                break;
+                if (slot == null || slot.ItemInstance == null || slot.Quantity <= 0 || !slot.ItemInstance.CanStackWith(c.Template, false)) continue;
+                int take = Math.Min(left, slot.Quantity);
+                slot.ChangeQuantity(-take);
+                left -= take;
             }
             source.InsertItemIntoOutput(copy, npc);
             _returned++;
@@ -136,12 +157,20 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             __state = null;
             try { __state = Fix4StuckItem.Capture(__instance); }
             catch (Exception e) { Core.Failed("fix4: Disable prefix", e); }
+            Fix4StuckItem.InDisable = true;
         }
 
         private static void Postfix(MoveItem __instance, Fix4StuckItem.Carry __state)
         {
             try { Fix4StuckItem.Return(__instance, __state, "task disabled", false); }
             catch (Exception e) { Core.Failed("fix4: Disable postfix", e); }
+        }
+
+        // Runs after the original even when it throws, so the nested-call flag cannot stay set.
+        private static Exception Finalizer(Exception __exception)
+        {
+            Fix4StuckItem.InDisable = false;
+            return __exception;
         }
     }
 }

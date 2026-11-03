@@ -42,7 +42,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
 #endif
         }
 
-        public void Reset() { _cache.Clear(); }
+        public void Reset() { _cache.Clear(); _failures = 0; _retryAt = 0f; _backoff = 0f; }
         public void Tick(float dt) { }
 
         public string Status =>
@@ -62,28 +62,58 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             return (x << 42) | (y << 21) | z;
         }
 
-        /// <summary>Prefix body. True (and <paramref name="result"/> set) when a fresh cached answer exists; <paramref name="key"/> is set on a miss.</summary>
-        internal static bool TryGet(NPCMovement m, long target, float prox, out bool result, out object key)
+        // After repeated exceptions in the cache code the cache is bypassed for a growing time and then tried again.
+        private const int FailuresBeforeBackoff = 3;
+        private static int _failures;
+        private static float _retryAt, _backoff;
+
+        /// <summary>True while the cache is switched off after repeated failures. Logs when the pause ends.</summary>
+        private static bool BackedOff()
         {
-            result = false; key = null;
+            if (_retryAt <= 0f) return false;
+            if (Time.time < _retryAt) return true;
+            _retryAt = 0f;
+            _failures = 0;
+            Core.Log?.Msg("[Fix6] the path cache is active again after a pause of " + _backoff.ToString("F0") + " s.");
+            return false;
+        }
+
+        /// <summary>Counts an exception of the cache code; at the third in a row the cache pauses and the pause grows each time (30 s up to 5 min).</summary>
+        internal static void Failure(string where, Exception e)
+        {
+            Core.Failed(where, e);
+            if (++_failures < FailuresBeforeBackoff) return;
+            _backoff = _backoff <= 0f ? 30f : Math.Min(_backoff * 2f, 300f);
+            _retryAt = Time.time + _backoff;
+            _cache.Clear();
+            Core.Log?.Warning("[Fix6] " + _failures + " failures in a row, the path cache is bypassed for " + _backoff.ToString("F0") + " s and then tried again.");
+        }
+
+        /// <summary>Prefix body. True (and <paramref name="result"/> set) when a fresh cached answer exists; <paramref name="key"/> is valid when <paramref name="hasKey"/> is set (a miss).</summary>
+        internal static bool TryGet(NPCMovement m, long target, float prox, out bool result, out Key key, out bool hasKey)
+        {
+            result = false; key = default; hasKey = false;
+            if (BackedOff()) return false;
             if (!Rel.Gate(FeatureName, Options.CacheReachability.Value)) return false;
             Key k = MakeKey(m, target, prox);
             if (_cache.TryGetValue(k, out Entry e) && e.Until > Time.time) { _hits++; result = e.Result; return true; }
             _misses++;
             key = k;
+            hasKey = true;
             return false;
         }
 
-        /// <summary>Postfix body: stores the answer under the key the prefix handed over (null when the cache was bypassed).</summary>
-        internal static void Store(object key, bool result)
+        /// <summary>Postfix body: stores the answer under the key the prefix handed over.</summary>
+        internal static void Store(Key key, bool result)
         {
-            if (key == null) return;
             if (_cache.Count >= 4096) _cache.Clear();
-            _cache[(Key)key] = new Entry { Result = result, Until = Time.time + Options.ReachabilityCacheSeconds.Value };
+            _cache[key] = new Entry { Result = result, Until = Time.time + Options.ReachabilityCacheSeconds.Value };
+            _failures = 0;
+            _backoff = 0f;
         }
 
-        /// <summary>Per-call state from prefix to postfix: the cache key of a miss. A null state means the reentry guard bypassed the call.</summary>
-        internal sealed class Call { internal object Key; }
+        /// <summary>Per-call state from prefix to postfix and finalizer. Entered: this call holds the re-entry guard. HasKey: Key is the miss to store.</summary>
+        internal struct Call { internal bool Entered; internal bool HasKey; internal Key Key; }
 
         internal static long Target(Vector3 v) { return Quantize(v); }
         internal static long Target(ITransitEntity e) { return e == null ? 0 : e.Pointer.ToInt64(); }
@@ -130,24 +160,31 @@ namespace ActuallyWorkingEmployees.Features.Reliability
 
         private static bool Prefix(NPCMovement __instance, Vector3 position, float proximityReq, ref bool __result, out Fix6ReachCache.Call __state)
         {
-            __state = null;
+            __state = default;
             if (!Rel.Enter(Guard)) return true;
-            __state = new Fix6ReachCache.Call();
+            __state.Entered = true;
             try
             {
-                if (Fix6ReachCache.TryGet(__instance, Fix6ReachCache.Target(position), proximityReq, out bool cached, out object key)) { __result = cached; return false; }
+                if (Fix6ReachCache.TryGet(__instance, Fix6ReachCache.Target(position), proximityReq, out bool cached, out Fix6ReachCache.Key key, out bool hasKey)) { __result = cached; return false; }
                 __state.Key = key;
+                __state.HasKey = hasKey;
             }
-            catch (Exception e) { Core.Failed("fix6: CanGetTo(Vector3) prefix", e); }
+            catch (Exception e) { Fix6ReachCache.Failure("fix6: CanGetTo(Vector3) prefix", e); }
             return true;
         }
 
         private static void Postfix(bool __result, Fix6ReachCache.Call __state)
         {
-            if (__state == null) return;
+            if (!__state.HasKey) return;
             try { Fix6ReachCache.Store(__state.Key, __result); }
-            catch (Exception e) { Core.Failed("fix6: CanGetTo(Vector3) postfix", e); }
-            finally { Rel.Leave(Guard); }
+            catch (Exception e) { Fix6ReachCache.Failure("fix6: CanGetTo(Vector3) postfix", e); }
+        }
+
+        // Runs even when the original throws, so the re-entry guard cannot stay set and bypass the cache for the rest of the session.
+        private static Exception Finalizer(Fix6ReachCache.Call __state, Exception __exception)
+        {
+            if (__state.Entered) Rel.Leave(Guard);
+            return __exception;
         }
     }
 
@@ -165,24 +202,30 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         // Parameter names must match the interop signature CanGetTo(ITransitEntity entity, float proximityReq).
         private static bool Prefix(NPCMovement __instance, ITransitEntity entity, float proximityReq, ref bool __result, out Fix6ReachCache.Call __state)
         {
-            __state = null;
+            __state = default;
             if (!Rel.Enter(Guard)) return true;
-            __state = new Fix6ReachCache.Call();
+            __state.Entered = true;
             try
             {
-                if (Fix6ReachCache.TryGet(__instance, Fix6ReachCache.Target(entity), proximityReq, out bool cached, out object key)) { __result = cached; return false; }
+                if (Fix6ReachCache.TryGet(__instance, Fix6ReachCache.Target(entity), proximityReq, out bool cached, out Fix6ReachCache.Key key, out bool hasKey)) { __result = cached; return false; }
                 __state.Key = key;
+                __state.HasKey = hasKey;
             }
-            catch (Exception e) { Core.Failed("fix6: CanGetTo(ITransitEntity) prefix", e); }
+            catch (Exception e) { Fix6ReachCache.Failure("fix6: CanGetTo(ITransitEntity) prefix", e); }
             return true;
         }
 
         private static void Postfix(bool __result, Fix6ReachCache.Call __state)
         {
-            if (__state == null) return;
+            if (!__state.HasKey) return;
             try { Fix6ReachCache.Store(__state.Key, __result); }
-            catch (Exception e) { Core.Failed("fix6: CanGetTo(ITransitEntity) postfix", e); }
-            finally { Rel.Leave(Guard); }
+            catch (Exception e) { Fix6ReachCache.Failure("fix6: CanGetTo(ITransitEntity) postfix", e); }
+        }
+
+        private static Exception Finalizer(Fix6ReachCache.Call __state, Exception __exception)
+        {
+            if (__state.Entered) Rel.Leave(Guard);
+            return __exception;
         }
     }
 }
