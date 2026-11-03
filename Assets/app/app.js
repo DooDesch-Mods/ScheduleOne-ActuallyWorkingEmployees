@@ -210,9 +210,12 @@ function drawGroups() {
     const b = el('div', 'group' + (i === app.group ? ' on' : ''));
     b.setAttribute('id', 'group-' + String(g.name).toLowerCase());
     b.appendChild(icon(groupIcon(g.name)));
-    b.appendChild(el('div', 'name', g.name));
+    // The count sits on its own line under the name, so a long name such as "Diagnostics" keeps its room.
+    const label = el('div', 'label');
+    label.appendChild(el('div', 'name', g.name));
     const n = changedCount(g);
-    if (n > 0) b.appendChild(el('div', 'count', n + ' changed'));
+    if (n > 0) label.appendChild(el('div', 'count', n + ' changed'));
+    b.appendChild(label);
     b.appendChild(icon('i-next', 'dim next'));
     b.addEventListener('click', () => openGroup(i));
     nav.appendChild(b);
@@ -232,6 +235,9 @@ function drawPane() {
     const b = button('ghost small', null, 'Refresh', () => renderDiag());
     b.setAttribute('id', 'diag-refresh');
     head.appendChild(b);
+    const run = button('small disabled', null, 'Run check', () => runDoctor());
+    run.setAttribute('id', 'diag-doctor-run');
+    head.appendChild(run);
   }
   if (g.options.some(o => !o.isDefault && o.editable)) {
     const b = button('ghost small', 'i-reset', 'Reset group', () => {
@@ -310,16 +316,7 @@ function badgesCard(d) {
 
 function doctorCard(d) {
   const x = d.doctor;
-  const { c, head } = card('diag-doctor', 'Setup Doctor');
-  const run = button('small' + (x.enabled && d.host ? '' : ' disabled'), null, 'Run check', () => {
-    if (!x.enabled || !d.host) return;
-    const r = call('doctorRun');
-    if (!r.ok) { say(r.msg || 'Something went wrong.'); return; }
-    say('');
-    renderDiag(r);
-  });
-  run.setAttribute('id', 'diag-doctor-run');
-  head.appendChild(run);
+  const { c } = card('diag-doctor', 'Setup Doctor');
   if (!d.host) { c.appendChild(note('diag-doctor-note', 'Host only.')); return c; }
   if (!x.enabled) { c.appendChild(note('diag-doctor-note', 'Off. Turn on Enable Setup Doctor.')); return c; }
   if (!x.ran) { c.appendChild(note('diag-doctor-summary', 'Not run yet.')); return c; }
@@ -364,11 +361,25 @@ function analyticsCard(d) {
   return c;
 }
 
+function canRunDoctor(d) { return !!(d && d.ok && d.host && d.doctor && d.doctor.enabled); }
+
+// "Run check" sits in the pane head beside "Refresh", so it stays in reach above a long badge list.
+function runDoctor() {
+  if (!canRunDoctor(app.diag)) return;
+  const r = call('doctorRun');
+  if (!r.ok) { say(r.msg || 'Something went wrong.'); return; }
+  say('');
+  renderDiag(r);
+}
+
 // Rebuilds the three panels from the host. A call that already answered with the state passes it in.
 function renderDiag(answer) {
   const box = $('diag');
   if (!box) return;
   const d = answer || call('diag');
+  app.diag = d;
+  const run = $('diag-doctor-run');
+  if (run) run.className = 'btn small' + (canRunDoctor(d) ? '' : ' disabled');
   box.replaceChildren();
   if (!d.ok) { box.appendChild(note('diag-error', d.msg || 'Something went wrong.')); return; }
   box.appendChild(badgesCard(d));
