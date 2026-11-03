@@ -135,16 +135,28 @@ $rows.Add((New-Row 'bal-sprinklers' -Finally 'awe reset botanist.usesprinklers' 
     if ($why) { return $why }
     $why = Set-AweOption $Slot $key 'true'
     if ($why) { return $why }
-    $e = Wait-Eff $Slot $key { param($r) $r.Configured -eq 'true' -and $r.Live -match '^\d+ sprinkler\(s\) cover \d+ pot\(s\)$' } 15
+    $live = '^(?<s>\d+) sprinkler\(s\) reach (?<p>\d+) pot\(s\), (?<a>\d+) left to them now$'
+    $e = Wait-Eff $Slot $key { param($r) $r.Configured -eq 'true' -and $r.Live -match $live } 15
     if ($e.Reason) { return $e.Reason }
     if ($e.Configured -ne 'true') { return "$key configured=$($e.Configured) after setting true" }
-    if ($e.Live -notmatch '^(?<s>\d+) sprinkler\(s\) cover (?<p>\d+) pot\(s\)$') { return "live reading '$($e.Live)' does not parse" }
-    if ([int]$Matches.s -gt 0 -and [int]$Matches.p -eq 0) { Write-Host "  NOTE bal-sprinklers: $($Matches.s) sprinkler(s) found but none covers a pot" }
-    else { Write-Host "  NOTE bal-sprinklers: $($e.Live)" }
+    if ($e.Live -notmatch $live) { return "live reading '$($e.Live)' does not parse" }
+    # A sprinkler nobody used holds no pot back.
+    if ([int]$Matches.a -ne 0) { return "pots are left to sprinklers before any spray: $($e.Live)" }
+    if ([int]$Matches.p -eq 0) { Write-Host "  NOTE bal-sprinklers: $($Matches.s) sprinkler(s), none reaches a pot; the spray step is skipped" }
+    else {
+        $pots = [int]$Matches.p
+        $why = Test-Step -Slot $Slot -Step (New-Step -Cmd 'awe sprinkle' -Until '\[Sprinklers\]' -Expect '\[Dev\] \[Sprinklers\] .+ sprays \d+ pot\(s\)\.' -Forbid 'Exception')
+        if ($why) { return $why }
+        $e = Wait-Eff $Slot $key { param($r) $r.Live -match $live -and [int]$Matches.a -gt 0 } 10
+        if ($e.Reason) { return $e.Reason }
+        if ($e.Live -notmatch $live -or [int]$Matches.a -eq 0) { return "no pot is left to the sprinkler 10 s after a spray: $($e.Live)" }
+        if ([int]$Matches.a -gt $pots) { return "more pots left to sprinklers than they reach: $($e.Live)" }
+        Write-Host "  NOTE bal-sprinklers: after a spray $($e.Live)"
+    }
     $why = Test-Step -Slot $Slot -Step (New-Step -Cmd "awe reset $key" -Expect ('\[Dev\]\s+' + [regex]::Escape($key) + ' = ') -Forbid 'Exception')
     if ($why) { return $why }
     $e = Wait-Eff $Slot $key { param($r) $r.Live -match '^0 sprinkler' } 8
     if ($e.Reason) { return $e.Reason }
-    if ($e.Live -notmatch '^0 sprinkler\(s\) cover 0 pot\(s\)$') { return "after reset the coverage is '$($e.Live)', expected none" }
+    if ($e.Live -notmatch '^0 sprinkler\(s\) reach 0 pot\(s\), 0 left to them now$') { return "after reset the coverage is '$($e.Live)', expected none" }
     $null
 }))
