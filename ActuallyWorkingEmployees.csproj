@@ -1,0 +1,166 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- CI checks the build-libs Workspace out INSIDE the repo folder; keep its sources out of the default compile glob.
+       Every Workspace props import comes below this ItemGroup, or its linked sources get stripped again in CI. -->
+  <ItemGroup>
+    <Compile Remove="Workspace/**/*.cs" />
+    <Compile Remove="tests/**" />
+  </ItemGroup>
+
+  <!-- Release hardening: strips debug info and the build path from the public DLL. -->
+  <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/Hardening.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/Hardening.props')" />
+  <Import Project="$(MSBuildThisFileDirectory)Workspace/build/Hardening.props" Condition="Exists('$(MSBuildThisFileDirectory)Workspace/build/Hardening.props')" />
+
+  <!-- Optional Snitch profiler in Debug builds (no-op when the Snitch host is absent). -->
+  <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/Snitch.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/Snitch.props')" />
+
+  <!-- DooDesch.ModVersion.Current from this project's own version property. -->
+  <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/ModVersion.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/ModVersion.props')" />
+  <Import Project="$(MSBuildThisFileDirectory)Workspace/build/ModVersion.props" Condition="Exists('$(MSBuildThisFileDirectory)Workspace/build/ModVersion.props')" />
+
+  <!-- Where a build is allowed to install: the test copy by default. See Workspace/build/Deploy.props. -->
+  <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/Deploy.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/Deploy.props')" />
+  <Import Project="$(MSBuildThisFileDirectory)Workspace/build/Deploy.props" Condition="Exists('$(MSBuildThisFileDirectory)Workspace/build/Deploy.props')" />
+
+  <!--
+    Actually Working Employees - MelonLoader IL2CPP mod for Schedule I. Host-side reliability fixes for all four
+    employee roles, every employee balance option at its vanilla default, and a Sideload phone app to change them.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>ActuallyWorkingEmployees</RootNamespace>
+    <AssemblyName>ActuallyWorkingEmployees</AssemblyName>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <!-- NEVER bumped. The release version comes from the tag (CI builds with -p:Version=X.Y.Z).
+         Rules: Workspace/docs/RELEASE-PROCESS.md, section "Versioning". -->
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
+    <NoWarn>$(NoWarn);MSB3277;MSB3245;CS0436</NoWarn>
+
+    <Company>DooDesch</Company>
+    <Authors>DooDesch</Authors>
+    <Product>Actually Working Employees</Product>
+    <AssemblyTitle>Actually Working Employees</AssemblyTitle>
+    <Description>Employees that keep working, with every employee option in a phone app.</Description>
+    <Copyright>Copyright © DooDesch</Copyright>
+    <Deterministic>true</Deterministic>
+
+    <WorkspaceLibPath Condition="'$(WorkspaceLibPath)' == ''">$(MSBuildThisFileDirectory)../Workspace/lib</WorkspaceLibPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Backend>il2cpp</Backend>
+    <DefineConstants>$(DefineConstants);IL2CPP</DefineConstants>
+    <GameManagedPath>$(WorkspaceLibPath)/$(Backend)/game</GameManagedPath>
+    <MelonLoaderPath>$(WorkspaceLibPath)/$(Backend)/melonloader</MelonLoaderPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <!-- The phone app page. The LogicalName prefix is the bundle prefix. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets/app/*" Exclude="Assets/app/preview.html;Assets/app/s1-mock.js;Assets/app/sideload-preview.*;Assets/app/dom-surface.js;Assets/app/globals.js">
+      <LogicalName>ActuallyWorkingEmployees.Assets.app.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- The Sideload.Api shim as source: the sibling Sideload checkout, else the copy under the build libs. The shim
+       finds the host by reflection; every call is a no-op without it. -->
+  <PropertyGroup>
+    <SideloadShimPath Condition="Exists('$(MSBuildThisFileDirectory)../Sideload/Sideload.Api/Sideload.cs')">$(MSBuildThisFileDirectory)../Sideload/Sideload.Api/Sideload.cs</SideloadShimPath>
+    <SideloadShimPath Condition="'$(SideloadShimPath)' == '' And Exists('$(WorkspaceLibPath)/sideload-api/Sideload.cs')">$(WorkspaceLibPath)/sideload-api/Sideload.cs</SideloadShimPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Condition="'$(SideloadShimPath)' != ''" Include="$(SideloadShimPath)" Link="Sideload.Api.cs" />
+  </ItemGroup>
+  <Target Name="ErrorWithoutSideloadShim" BeforeTargets="CoreCompile" Condition="'$(SideloadShimPath)' == ''">
+    <Error Text="Sideload.Api/Sideload.cs was not found next to this repo or under $(WorkspaceLibPath)/sideload-api/. The app cannot compile without it." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="MelonLoader">
+      <HintPath>$(MelonLoaderPath)/MelonLoader.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(MelonLoaderPath)/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(MelonLoaderPath)/Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(MelonLoaderPath)/Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(GameManagedPath)/Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppSystem">
+      <HintPath>$(GameManagedPath)/Il2CppSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameManagedPath)/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppScheduleOne.Core">
+      <HintPath>$(GameManagedPath)/Il2CppScheduleOne.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppFishNet.Runtime">
+      <HintPath>$(GameManagedPath)/Il2CppFishNet.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="S1API.Il2Cpp.MelonLoader">
+      <HintPath>$(WorkspaceLibPath)/il2cpp/s1api/S1API.Il2Cpp.MelonLoader.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AIModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.AIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameManagedPath)/UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
+    <Exec Condition="Exists('$(ModsDirectory)')" Command="cmd /c if exist &quot;$(ModsDirectory)&quot; copy /Y &quot;$(TargetPath)&quot; &quot;$(ModsDirectory)&quot;" ContinueOnError="true" />
+  </Target>
+
+</Project>

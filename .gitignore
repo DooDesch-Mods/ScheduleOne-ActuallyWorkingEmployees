@@ -11,6 +11,10 @@ obj/
 # Deployed copy (PostBuild copies the DLL into the game Mods folder)
 Mods/
 
+# Test output (tests/awe-perf.ps1)
+tests/out/
+
 # OS
 Thumbs.db
 .DS_Store
+__pycache__/

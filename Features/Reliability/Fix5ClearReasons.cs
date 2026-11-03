@@ -1,0 +1,201 @@
+using System;
+using System.Collections.Generic;
+using HarmonyLib;
+using Il2CppScheduleOne.ObjectScripts;
+using ActuallyWorkingEmployees.Config;
+#if DEBUG
+using ActuallyWorkingEmployees.Debugging;
+#endif
+
+namespace ActuallyWorkingEmployees.Features.Reliability
+{
+    /// <summary>
+    /// Fix 5: idle chemists and cleaners say which station or bin holds them back.
+    ///
+    /// Both roles submit the fixed "There's nothing for me to do right now." when no task is startable. A prefix on
+    /// Employee.SubmitNoWorkReason swaps that text for the first blocking station (in the order the chemist tries
+    /// them) or for the trash level of the assigned cans. When nothing specific is found the vanilla text stays.
+    /// </summary>
+    internal sealed class Fix5ClearReasons : IFeature
+    {
+        internal const string FeatureName = "fix5-clear-reasons";
+        internal const string VanillaText = "There's nothing for me to do right now.";
+        public string Name => FeatureName;
+
+        private static int _rewritten, _kept;
+
+        public void Init()
+        {
+#if DEBUG
+            DevConsole.Register("reasons", "awe reasons [submit]  (idle reason of every chemist and cleaner / send it to the app)", Dev);
+#endif
+        }
+
+        public void Reset() { }
+        public void Tick(float dt) { }
+
+        public string Status => "on=" + (Options.ClearReasons.Value ? 1 : 0) + " rewritten=" + _rewritten + " kept=" + _kept;
+
+        /// <summary>Prefix body. Replaces the text of the generic idle reason when the role has a better one.</summary>
+        internal static void Rewrite(Employee emp, ref string reason, ref string fix)
+        {
+            if (reason != VanillaText) return;   // a specific reason of the game itself
+            if (Packaging.PackagerRoutes.Rewrite(emp, ref reason, ref fix)) return;
+            if (!Rel.Gate(FeatureName, Options.ClearReasons.Value)) return;
+            if (!Explain(emp, out string newReason, out string newFix)) { _kept++; return; }
+            reason = newReason;
+            fix = newFix;
+            _rewritten++;
+            Rel.Action("fix5.reason", "[Fix5] " + Rel.Name(emp) + " idle: " + newReason + (newFix.Length > 0 ? " Fix: " + newFix : ""));
+        }
+
+        /// <summary>
+        /// Extension point for other features: a provider explains why an employee of a role it knows has no work, or returns
+        /// false to leave the decision to the next provider and the built-in chemist and cleaner reasons.
+        /// </summary>
+        internal delegate bool ReasonProvider(Employee emp, out string reason, out string fix);
+
+        private static readonly List<ReasonProvider> _providers = new List<ReasonProvider>();
+
+        /// <summary>Registers a provider once; call it from the feature's Init.</summary>
+        internal static void AddProvider(ReasonProvider provider)
+        {
+            if (provider == null || _providers.Contains(provider)) return;
+            _providers.Add(provider);
+        }
+
+        /// <summary>The first thing that blocks this employee, or false when the role has nothing more specific than vanilla.</summary>
+        internal static bool Explain(Employee emp, out string reason, out string fix)
+        {
+            reason = ""; fix = "";
+            for (int i = 0; i < _providers.Count; i++)
+            {
+                try { if (_providers[i](emp, out reason, out fix)) return true; }
+                catch (Exception e) { Core.Caught("fix5: reason provider " + i, e); reason = ""; fix = ""; }
+            }
+            Chemist chemist = emp.TryCast<Chemist>();
+            if (chemist != null) return ExplainChemist(chemist, out reason, out fix);
+            Cleaner cleaner = emp.TryCast<Cleaner>();
+            if (cleaner != null) return ExplainCleaner(cleaner, out reason, out fix);
+            return false;
+        }
+
+        /// <summary>True when somebody other than <paramref name="self"/> uses the station; the employee's own use is not a blocker.</summary>
+        private static bool UsedByOther(Il2CppScheduleOne.Management.IUsable usable, NPC self)
+        {
+            if (usable == null || !usable.IsInUse) return false;
+            var npcUser = usable.NPCUserObject;
+            var mine = self.NetworkObject;
+            return !(npcUser != null && mine != null && npcUser.Pointer == mine.Pointer && usable.PlayerUserObject == null);
+        }
+
+        private static bool ExplainChemist(Chemist c, out string reason, out string fix)
+        {
+            reason = ""; fix = "";
+            var cfg = c.configuration;
+            if (cfg == null) { Rel.MsgOnce("fix5:nocfg:" + c.GetInstanceID(), "[" + FeatureName + "] " + Rel.Name(c) + " has no configuration."); return false; }
+
+            // Same order as Chemist.TryStartNewTask: ovens, chemistry stations, cauldrons, mixing stations.
+            var ovens = cfg.LabOvens;
+            if (ovens != null)
+            {
+                for (int i = 0; i < ovens.Count; i++)
+                {
+                    var o = ovens[i];
+                    if (o == null) continue;
+                    if (UsedByOther(o.TryCast<Il2CppScheduleOne.Management.IUsable>(), c)) { reason = "A lab oven is in use."; return true; }
+                    if (o.CurrentOperation != null)
+                    {
+                        if (!o.IsReadyForHarvest()) { reason = "A lab oven is still cooking."; return true; }
+                        if (!o.CanOutputSpaceFitCurrentOperation()) { reason = "A lab oven's output is full."; fix = "Empty the oven's output."; return true; }
+                    }
+                    else if (!o.IsReadyToStart()) { reason = "A lab oven is missing ingredients."; fix = "Fill the oven's input."; return true; }
+                }
+            }
+            foreach (var s in cfg.ChemStations)
+            {
+                if (s == null) continue;
+                if (UsedByOther(s.TryCast<Il2CppScheduleOne.Management.IUsable>(), c)) { reason = "A chemistry station is in use."; return true; }
+                if (s.CurrentCookOperation != null) { reason = "A chemistry station is still cooking."; return true; }
+                var recipe = (s.Configuration?.TryCast<Il2CppScheduleOne.Management.ChemistryStationConfiguration>())?.Recipe?.SelectedRecipe;
+                if (recipe == null) { reason = "A chemistry station has no recipe."; fix = "Pick a recipe in the station's settings."; return true; }
+                if (!s.HasIngredientsForRecipe(recipe)) { reason = "A chemistry station is missing ingredients."; fix = "Put the recipe's ingredients into the station."; return true; }
+            }
+            foreach (var s in cfg.Cauldrons)
+            {
+                if (s == null) continue;
+                switch (s.GetState())
+                {
+                    case Cauldron.EState.MissingIngredients: reason = "A cauldron is missing ingredients."; fix = "Fill the cauldron's input."; return true;
+                    case Cauldron.EState.Cooking: reason = "A cauldron is still cooking."; return true;
+                    case Cauldron.EState.OutputFull: reason = "A cauldron's output is full."; fix = "Empty the cauldron or give it a destination."; return true;
+                }
+            }
+            foreach (var s in cfg.MixStations)
+            {
+                if (s == null) continue;
+                var mixCfg = s.Configuration?.TryCast<Il2CppScheduleOne.Management.MixingStationConfiguration>();
+                if (!s.CanStartMix()) { reason = "A mixing station cannot start a mix."; fix = "Check the station's ingredients and product."; return true; }
+                if (mixCfg != null && s.GetMixQuantity() < mixCfg.StartThrehold.Value)
+                {
+                    reason = "A mixing station has less than its start threshold.";
+                    fix = "Add product or lower the threshold.";
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool ExplainCleaner(Cleaner c, out string reason, out string fix)
+        {
+            reason = ""; fix = "";
+            var cfg = c.configuration;
+            var bins = cfg?.binItems;
+            if (bins == null) { Rel.MsgOnce("fix5:nobins:" + c.GetInstanceID(), "[" + FeatureName + "] " + Rel.Name(c) + " has no bin list."); return false; }
+            if (bins.Count == 0) { reason = "No trash cans are assigned to me."; fix = "Assign trash cans with the management clipboard."; return true; }
+
+            float max = 0f;
+            for (int i = 0; i < bins.Count; i++)
+            {
+                var bin = bins[i];
+                if (bin?.Container == null) continue;
+                max = Math.Max(max, bin.Container.NormalizedTrashLevel);
+            }
+            reason = "The assigned trash cans are at most " + (int)Math.Round(max * 100f) + "% full.";
+            return true;
+        }
+
+#if DEBUG
+        private static void Dev(string[] args)
+        {
+            if (!DevConsole.RequireHost("reasons")) return;
+            bool submit = args.Length > 0 && args[0].Equals("submit", StringComparison.OrdinalIgnoreCase);
+            int n = 0;
+            foreach (Employee emp in Rel.Employees())
+            {
+                if (emp.TryCast<Chemist>() == null && emp.TryCast<Cleaner>() == null) continue;
+                n++;
+                bool has = Explain(emp, out string r, out string f);
+                Core.Log?.Msg("[Dev] [Fix5] " + Rel.Name(emp) + ": " + (has ? r + (f.Length > 0 ? " Fix: " + f : "") : "no specific reason, vanilla text stays"));
+                // Goes through the prefix like the game's own idle submit.
+                if (submit) emp.SubmitNoWorkReason(VanillaText, "");
+            }
+            Core.Log?.Msg("[Dev] [Fix5] " + n + " employee(s). " + new Fix5ClearReasons().Status);
+        }
+#endif
+    }
+
+    /// <summary>Employee.SubmitNoWorkReason (Il2CppScheduleOne.Employees/Employee.cs:1663).</summary>
+    [HarmonyPatch(typeof(Employee), nameof(Employee.SubmitNoWorkReason))]
+    internal static class Awe_Fix5_SubmitNoWorkReason_Patch
+    {
+        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
+        private static void Prefix(Employee __instance, ref string reason, ref string fix)
+        {
+            if (!Rel.Enter(Fix5ClearReasons.FeatureName)) return;
+            try { Fix5ClearReasons.Rewrite(__instance, ref reason, ref fix); }
+            catch (Exception e) { Core.Failed("fix5: SubmitNoWorkReason prefix", e); }
+            finally { Rel.Leave(Fix5ClearReasons.FeatureName); }
+        }
+    }
+}
