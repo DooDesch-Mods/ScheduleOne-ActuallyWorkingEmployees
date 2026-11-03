@@ -20,6 +20,14 @@ namespace ActuallyWorkingEmployees.Compat
         private static readonly string OwnAssembly = typeof(NativeMethods).Assembly.GetName().Name;
 
         /// <summary>
+        /// Harmony owner text of Harder Working Employees. Its patches get info lines instead of warnings: the one
+        /// [Compat] warning already tells the player to remove it.
+        /// </summary>
+        private const string HweOwner = "HarderWorkingEmployees";
+
+        private static bool IsHwe(string owners) => owners != null && owners.IndexOf(HweOwner, StringComparison.OrdinalIgnoreCase) >= 0;
+
+        /// <summary>
         /// Address of the native function that <paramref name="m"/> calls, read from its NativeMethodInfoPtr_ field
         /// (Il2CppMethodInfo.methodPointer is the struct's first field). IntPtr.Zero when the field is not found.
         /// </summary>
@@ -93,7 +101,7 @@ namespace ActuallyWorkingEmployees.Compat
             {
                 if (kv.Key == m) continue;
                 Note("[NativeMethods] " + m.DeclaringType?.Name + "." + m.Name + " not patched: its native code at 0x" + a.ToString("X")
-                    + " is already patched through " + kv.Value + ".", true);
+                    + " is already patched through " + kv.Value + ".", !IsHwe(kv.Value));
                 return false;
             }
             return true;
@@ -134,7 +142,7 @@ namespace ActuallyWorkingEmployees.Compat
                 if (other != null)
                 {
                     skippedForeign++;
-                    Note("[NativeMethods] " + what + ": " + label + " not patched, its native code at 0x" + a.ToString("X") + " is already patched through " + other + ".", true);
+                    Note("[NativeMethods] " + what + ": " + label + " not patched, its native code at 0x" + a.ToString("X") + " is already patched through " + other + ".", !IsHwe(other));
                     continue;
                 }
 
@@ -160,6 +168,7 @@ namespace ActuallyWorkingEmployees.Compat
         internal static void ReportSharedPatchedAddresses()
         {
             var byAddress = new Dictionary<IntPtr, List<string>>();
+            var hweOnly = new Dictionary<IntPtr, bool>();
             int checkedCount = 0;
             foreach (MethodBase m in HarmonyLib.Harmony.GetAllPatchedMethods())
             {
@@ -179,6 +188,12 @@ namespace ActuallyWorkingEmployees.Compat
                     checkedCount++;
                     if (!byAddress.TryGetValue(a, out List<string> names)) byAddress[a] = names = new List<string>();
                     names.Add(t.Name + "." + m.Name);
+                    bool onlyHwe = true;
+                    HarmonyLib.Patches info2 = HarmonyLib.Harmony.GetPatchInfo(m);
+                    if (info2 != null)
+                        foreach (string owner in info2.Owners)
+                            if (!IsHwe(owner)) { onlyHwe = false; break; }
+                    hweOnly[a] = (!hweOnly.TryGetValue(a, out bool before) || before) && onlyHwe;
                 }
                 catch (Exception e) { Core.Caught("native: read the address of " + m.DeclaringType?.Name + "." + m.Name, e); }
             }
@@ -187,7 +202,11 @@ namespace ActuallyWorkingEmployees.Compat
             {
                 if (kv.Value.Count < 2) continue;
                 shared++;
-                Core.Log?.Warning("[NativeMethods] patched methods " + string.Join(", ", kv.Value) + " share native code at 0x" + kv.Key.ToString("X") + "; each patch detours the same address and the game overflows its stack on the first call.");
+                string head = "[NativeMethods] patched methods " + string.Join(", ", kv.Value) + " share native code at 0x" + kv.Key.ToString("X");
+                if (hweOnly.TryGetValue(kv.Key, out bool hwe) && hwe)
+                    Core.Log?.Msg(head + "; all of them are patched by Harder Working Employees only.");
+                else
+                    Core.Log?.Warning(head + "; each patch detours the same address and the game overflows its stack on the first call.");
             }
             Core.Log?.Msg("[NativeMethods] " + checkedCount + " patched interop method(s) checked, " + shared + " shared native address(es).");
         }
