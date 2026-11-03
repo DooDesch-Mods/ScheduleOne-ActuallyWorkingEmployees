@@ -24,6 +24,7 @@ namespace ActuallyWorkingEmployees.Host
             ["set"] = Set,
             ["reset"] = Reset,
             ["resetAll"] = _ => ResetAll(),
+            ["preset"] = Preset,
             ["diag"] = DiagCalls.Diag,
             ["doctorRun"] = DiagCalls.DoctorRun,
             ["analyticsReset"] = DiagCalls.AnalyticsReset,
@@ -151,6 +152,22 @@ namespace ActuallyWorkingEmployees.Host
             Core.Log?.Msg("[App] reset all (" + Net.RoleText() + "): " + n + " setting(s) back to default.");
             var state = BuildState();
             state["changed"] = n;
+            return state;
+        }
+
+        private static JObject Preset(JObject a)
+        {
+            string name = (string)a["name"];
+            Presets.Result r = Presets.Apply(name);
+            if (r.Refused != null)
+            {
+                Core.Log?.Warning("[App] preset " + name + " refused: " + r.Refused);
+                return Fail(Net.IsClientOnly ? HostMsg : "Something went wrong.");
+            }
+            if (r.Errors.Count > 0) return Fail("Something went wrong.");
+            Core.Log?.Msg("[App] preset " + name + " (" + Net.RoleText() + "): " + r.Changed + " of " + r.Total + " setting(s) changed.");
+            var state = BuildState();
+            state["changed"] = r.Changed;
             return state;
         }
     }

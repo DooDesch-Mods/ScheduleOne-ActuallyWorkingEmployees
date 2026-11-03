@@ -246,7 +246,21 @@ $rows.Add((New-Row 'reset-all' -Finally 'awe reset all' -Steps @(
     Step-Get 'general.verboselogging' 'Off'
     New-Step -Cmd 'awe status' -Expect 'changed=0\b')))
 
-# -- status: every feature the boot log announced is listed with its state --
+# -- preset: "Fast" writes work speed x2 for all four roles once; Reset all takes it back --
+$fastKeys = @('botanist.workspeed', 'chemist.workspeed', 'packager.workspeed', 'cleaner.workspeed')
+$rows.Add((New-Row 'preset-fast' -Finally 'awe reset all' -Steps (@(
+    New-Step -Cmd 'awe reset all' -Expect 'awe reset all: \d+ option\(s\) reset\.'
+    New-Step -Cmd 'awe preset fast' -Until 'awe preset' -Expect 'awe preset fast: 4 of 4 option\(s\) changed, 0 rejected\.' -Forbid 'Exception'
+) + @($fastKeys | ForEach-Object { Step-Get $_ '2' '1' }) + @(
+    New-Step -Cmd 'awe get botanist.walkspeed' -Expect (Rx-OptAt 'botanist.walkspeed' 'Vanilla')
+    New-Step -Cmd 'awe get botanist.dailywage' -Expect (Rx-OptAt 'botanist.dailywage' 'Vanilla')
+    New-Step -Cmd 'awe preset fast' -Until 'awe preset' -Expect 'awe preset fast: 0 of 4 option\(s\) changed, 0 rejected\.'
+    New-Step -Cmd 'awe preset bogus' -Until 'awe preset' -Expect "awe preset: no preset 'bogus'\. Presets: fast"
+    New-Step -Cmd 'awe status' -Expect 'changed=4\b'
+    New-Step -Cmd 'awe reset all' -Expect 'awe reset all: 4 option\(s\) reset\.'
+) + @($fastKeys | ForEach-Object { Step-Get $_ '1' })))))
+
+# -- status:every feature the boot log announced is listed with its state --
 $rows.Add((New-Row 'status' -Steps @(
     New-Step -Cmd 'awe status' -Until 'features=\d+' -Expect "options=$totalOptions changed=\d+" -Check {
         param($r, $texts)

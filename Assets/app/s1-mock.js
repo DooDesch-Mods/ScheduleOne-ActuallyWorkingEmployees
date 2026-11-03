@@ -1,4 +1,4 @@
-// Stand-in for Host/Calls.cs: the same JSON shapes for list, role, set, reset and resetAll. Every name the page
+// Stand-in for Host/Calls.cs: the same JSON shapes for list, role, set, reset, resetAll and preset. Every name the page
 // passes to s1.call needs a case here; a missing one answers '' and the page shows an error. Not embedded in the mod.
 
 const GROUPS = ['General', 'Reliability', 'Botanist', 'Chemist', 'Packager', 'Cleaner', 'Stations', 'Property', 'Diagnostics'];
@@ -17,7 +17,10 @@ const OPTIONS = [
   N('int', 'Botanist', 'MaxPots', 'Max pots', 'Pots one botanist can be assigned. Vanilla: 8.', 8, 1, 64, 1),
   N('float', 'Botanist', 'WorkSpeed', 'Work speed', 'Multiplier for the speed of every botanist action. Vanilla: 1.', 1, 0.1, 10, 0.1),
   N('float', 'Botanist', 'SoilTime', 'Add soil time', 'Seconds to add soil to a pot. Vanilla: 10.', 10, 0.5, 60, 0.5),
-  N('int', 'Chemist', 'MaxStations', 'Max stations', 'Stations one chemist can be assigned. Vanilla: 4.', 4, 1, 32, 1),
+  N('float', 'Chemist', 'WorkSpeed', 'Work speed', 'Multiplier for the speed of every chemist action. Vanilla: 1.', 1, 0.25, 10, 0.05),
+  N('float', 'Packager', 'WorkSpeed', 'Work speed', 'Multiplier for the speed of every packager action. Vanilla: 1.', 1, 0.25, 10, 0.05),
+  N('float', 'Cleaner', 'WorkSpeed', 'Work speed', 'Multiplier for the speed of every cleaner action. Vanilla: 1.', 1, 0.25, 10, 0.05),
+  N('int', 'Chemist', 'MaxStations','Max stations', 'Stations one chemist can be assigned. Vanilla: 4.', 4, 1, 32, 1),
   C('Packager', 'Priority', 'Pack order', 'Which station the packager serves first.', 'Nearest', ['Nearest', 'Fullest', 'Oldest']),
   N('float', 'Cleaner', 'TrashRange', 'Trash range', 'Metres a cleaner looks for trash. Vanilla: 20.', 20, 5, 200, 5),
   B('Diagnostics', 'ShowStatus', 'Show status lines', 'Writes one status line per employee to the log.', false, { hostOnly: false }),
@@ -110,6 +113,14 @@ export function call(name, arg) {
     case 'resetAll': {
       let n = 0;
       for (const o of OPTIONS) if (!(o.hostOnly && client()) && o.value !== o.def) { o.value = o.def; n++; }
+      return JSON.stringify({ ...state(), changed: n });
+    }
+    case 'preset': {
+      if (a.name !== 'fast') return JSON.stringify({ ok: false, msg: 'Something went wrong.' });
+      if (client()) return JSON.stringify({ ok: false, msg: 'Set by the host.' });
+      const keys = ['botanist.workspeed', 'chemist.workspeed', 'packager.workspeed', 'cleaner.workspeed'];
+      let n = 0;
+      for (const k of keys) { const o = find(k); if (o && o.value !== '2') { o.value = '2'; n++; } }
       return JSON.stringify({ ...state(), changed: n });
     }
     default:

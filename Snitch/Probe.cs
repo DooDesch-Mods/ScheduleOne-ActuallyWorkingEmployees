@@ -36,6 +36,7 @@ namespace ActuallyWorkingEmployees.Profiling
 
             p.Text(BuildStateText);
             p.Action("Reset all options", () => Options.ResetAllToDefault());
+            p.Action("Preset: Fast", () => Presets.Apply("fast"));
             p.Log();
 
             Core.Log?.Msg("[Snitch] Actually Working Employees panel registered.");
