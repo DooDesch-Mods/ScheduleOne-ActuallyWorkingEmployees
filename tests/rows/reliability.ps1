@@ -36,8 +36,10 @@ $rows.Add((New-Row 'rel-fix5-reason-lines' -Steps @(
     New-Step -Cmd 'awe reasons' -Until '\[Fix5\] \d+ employee\(s\)\.' -Expect '\[Fix5\] \d+ employee\(s\)\. on=1 rewritten=\d+ kept=\d+' -Forbid 'Exception' -Check {
         param($r, $texts)
         foreach ($t in $texts) {
-            if ($t -match '^\[Dev\] \[Fix5\] .+: (?<why>.+)$' -and $Matches.why -match '^A lab oven' -and
-                $Matches.why -notmatch '^A lab oven(\x27s output is full| is in use| is still cooking| is missing ingredients)\.') {
+            if ($t -notmatch '^\[Dev\] \[Fix5\] .+: (?<why>.+)$') { continue }
+            $why = $Matches.why   # the next -match replaces $Matches
+            if ($why -match '^A lab oven' -and
+                $why -notmatch '^A lab oven(\x27s output is full| is in use| is still cooking| is missing ingredients)\.') {
                 return "unknown lab oven reason: $t"
             }
         }

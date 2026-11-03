@@ -46,7 +46,8 @@ $totalOptions = ($groupCounts.Values | Measure-Object -Sum).Sum
 
 # The dev console prints "key = <value>[  (default <d>)][  host=<v>][ local][ read-only]".
 function Rx-OptAt { param([string]$Key, [string]$Val) "\[Dev\]\s+$([regex]::Escape($Key)) = $Val( local| read-only)*\s*$" }
-function Rx-OptSet { param([string]$Key, [string]$Val, [string]$Def) "\[Dev\]\s+$([regex]::Escape($Key)) = $Val\s+\(default $Def\)" }
+# A value equal to its default prints without the "(default ...)" suffix.
+function Rx-OptSet { param([string]$Key, [string]$Val, [string]$Def) if ($Val -eq $Def) { return (Rx-OptAt $Key $Val) } "\[Dev\]\s+$([regex]::Escape($Key)) = $Val\s+\(default $Def\)" }
 function Rx-Warn { param([string]$Text) "awe (set|get|reset|list): .*$Text" }
 
 # get/set/reset steps of one option: shorter rows below.
@@ -471,7 +472,7 @@ $rows.Add((New-Row 'fix8-harvest-time' -Finally 'awe reset botanist.harvesttimep
 
 # -- co-op sync, single player: the report prints without an error; a host without a guest has no value on the lobby key --
 $rows.Add((New-Row 'coop-sync' -Steps @(
-    Step-Feature 'coop-sync' 'role=(single-player|host) bytes=\d+ writes=\d+ readback_fail=0 applied=\d+ hash=\S+'
+    Step-Feature 'coop-sync' 'role=(single-player|host) bytes=\d+ wire=\d+ writes=\d+ readback_fail=0 applied=\d+ hash=\S+'
     New-Step -Cmd 'awe sync' -Until 'AWE sync (decoded|no value|decode failed)' -Forbid 'Exception', 'decode failed' `
         -Expect 'AWE sync role=(single-player|host) key=awe_opts bytes=\d+ hash=\S+ writes=\d+ readback_fail=0 applied=\d+ inLobby=\w+',
             'AWE sync (decoded \d+ option\(s\), hash \S+: |no value on the lobby key)')))
