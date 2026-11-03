@@ -58,6 +58,7 @@ namespace ActuallyWorkingEmployees
         {
             Instance = this;
             Log = LoggerInstance;
+            NativeMethods.Flush();   // lines of the patch-target resolution, which runs before the logger exists
 
             Options.Initialize();
             // MelonLoader has applied every [HarmonyPatch] class of this assembly before this method runs. A PatchAll
@@ -81,6 +82,7 @@ namespace ActuallyWorkingEmployees
         public override void OnLateInitializeMelon()
         {
             HweDetector.Check();
+            NativeMethods.ReportSharedPatchedAddresses();
         }
 
         /// <summary>Drops every feature's in-memory state on save start and scene change.</summary>

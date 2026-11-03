@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using HarmonyLib;
 using Il2CppScheduleOne.Growing;
 using Il2CppScheduleOne.NPCs.Behaviour;
 using Il2CppScheduleOne.ObjectScripts;
+using ActuallyWorkingEmployees.Compat;
 using ActuallyWorkingEmployees.Config;
+using ActuallyWorkingEmployees.Features.Reliability;
 using ActuallyWorkingEmployees.Networking;
 
 namespace ActuallyWorkingEmployees.Features.Balance
@@ -69,46 +72,53 @@ namespace ActuallyWorkingEmployees.Features.Balance
         }
     }
 
-    [HarmonyPatch(typeof(AddSoilToGrowContainerBehaviour), nameof(AddSoilToGrowContainerBehaviour.GetActionDuration))]
-    internal static class Awe_AddSoil_Duration_Patch
+    /// <summary>
+    /// GetActionDuration of every grow-container behaviour. Several of them compile to the same native function
+    /// (AddSoil, Additive and Water all return 10f; Sow and ApplySpawn 15f), so each native address is patched once
+    /// (see <see cref="NativeMethods"/>) and the postfix picks the option by the instance's real class.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class Awe_GrowAction_Duration_Patch
     {
-        private static void Postfix(ref float __result) => DurationPatches.Fixed(ref __result, Options.BotanistSoilTime);
-    }
+        private struct Target { internal Type Type; internal Func<FloatOption> Option; internal bool PerUnit; }
 
-    [HarmonyPatch(typeof(ApplyAdditiveToGrowContainerBehaviour), nameof(ApplyAdditiveToGrowContainerBehaviour.GetActionDuration))]
-    internal static class Awe_Additive_Duration_Patch
-    {
-        private static void Postfix(ref float __result) => DurationPatches.Fixed(ref __result, Options.BotanistAdditiveTime);
-    }
+        private static readonly Target[] _targets =
+        {
+            new Target { Type = typeof(AddSoilToGrowContainerBehaviour), Option = () => Options.BotanistSoilTime },
+            new Target { Type = typeof(ApplyAdditiveToGrowContainerBehaviour), Option = () => Options.BotanistAdditiveTime },
+            new Target { Type = typeof(ApplySpawnToMushroomBedBehaviour), Option = () => Options.BotanistMushroomBedTime },
+            new Target { Type = typeof(SowSeedInPotBehaviour), Option = () => Options.BotanistSowTime },
+            new Target { Type = typeof(WaterPotBehaviour), Option = () => Options.BotanistWaterTime },
+            new Target { Type = typeof(HarvestPotBehaviour), Option = () => Options.BotanistHarvestTimePerUnit, PerUnit = true },
+            new Target { Type = typeof(HarvestMushroomBedBehaviour), Option = () => Options.BotanistMushroomHarvestTimePerUnit, PerUnit = true },
+        };
 
-    [HarmonyPatch(typeof(ApplySpawnToMushroomBedBehaviour), nameof(ApplySpawnToMushroomBedBehaviour.GetActionDuration))]
-    internal static class Awe_ApplySpawn_Duration_Patch
-    {
-        private static void Postfix(ref float __result) => DurationPatches.Fixed(ref __result, Options.BotanistMushroomBedTime);
-    }
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            var all = new List<MethodBase>();
+            foreach (Target t in _targets)
+            {
+                MethodBase m = AccessTools.DeclaredMethod(t.Type, nameof(GrowContainerBehaviour.GetActionDuration), Type.EmptyTypes);
+                if (m == null) { MelonLoader.MelonLogger.Warning("[Actually Working Employees] " + t.Type.Name + ".GetActionDuration not found, its action time option has no effect."); continue; }
+                all.Add(m);
+            }
+            return NativeMethods.OnePerAddress("GetActionDuration", all);
+        }
 
-    [HarmonyPatch(typeof(SowSeedInPotBehaviour), nameof(SowSeedInPotBehaviour.GetActionDuration))]
-    internal static class Awe_Sow_Duration_Patch
-    {
-        private static void Postfix(ref float __result) => DurationPatches.Fixed(ref __result, Options.BotanistSowTime);
-    }
-
-    [HarmonyPatch(typeof(WaterPotBehaviour), nameof(WaterPotBehaviour.GetActionDuration))]
-    internal static class Awe_Water_Duration_Patch
-    {
-        private static void Postfix(ref float __result) => DurationPatches.Fixed(ref __result, Options.BotanistWaterTime);
-    }
-
-    [HarmonyPatch(typeof(HarvestPotBehaviour), nameof(HarvestPotBehaviour.GetActionDuration))]
-    internal static class Awe_HarvestPot_Duration_Patch
-    {
-        private static void Postfix(ref float __result) => DurationPatches.PerUnit(ref __result, Options.BotanistHarvestTimePerUnit);
-    }
-
-    [HarmonyPatch(typeof(HarvestMushroomBedBehaviour), nameof(HarvestMushroomBedBehaviour.GetActionDuration))]
-    internal static class Awe_HarvestMushroom_Duration_Patch
-    {
-        private static void Postfix(ref float __result) => DurationPatches.PerUnit(ref __result, Options.BotanistMushroomHarvestTimePerUnit);
+        private static void Postfix(GrowContainerBehaviour __instance, ref float __result)
+        {
+            if (__instance == null) { Rel.MsgOnce("duration:null", "[bal-botanist] GetActionDuration ran without an instance, its value is left unchanged."); return; }
+            string cls = Rel.TypeName(__instance);
+            foreach (Target t in _targets)
+            {
+                if (t.Type.Name != cls) continue;
+                if (t.PerUnit) DurationPatches.PerUnit(ref __result, t.Option());
+                else DurationPatches.Fixed(ref __result, t.Option());
+                return;
+            }
+            // A folded address can also belong to an unrelated method of the game; that caller keeps its value.
+            Rel.MsgOnce("duration:other:" + cls, "[bal-botanist] GetActionDuration code is shared with " + cls + ", its value is left unchanged.");
+        }
     }
 
     /// <summary>The watering and misting thresholds are literals (0.2 critical, 0.3 normal) passed into this check.</summary>
