@@ -39,10 +39,12 @@ namespace ActuallyWorkingEmployees.Features.Diagnostics
             if (t.Contains("nothing for me to do")) return Sev.Info;
             if (t.Contains("haven't been paid")) return Sev.Info;
             if (t.Contains("waiting for a full load")) return Sev.Info;
+            // Before "destination is full": the botanist's harvest text names both ("no destination or it's destination
+            // is full"), and a missing destination needs the player.
+            if (t.Contains("no destination")) return Sev.Warning;
             if (t.Contains("destination is full")) return Sev.Info;
             if (t.Contains("shift ends")) return Sev.Info;
             if (t.Contains("still cooking") || t.Contains("is in use")) return Sev.Info;
-            if (t.Contains("no destination")) return Sev.Warning;
             if (t.Contains("haven't been assigned") || t.Contains("locker")) return Sev.Problem;
             return Sev.Warning;
         }
