@@ -65,5 +65,9 @@ namespace ActuallyWorkingEmployees.Config
         public static readonly FloatOption BotanistWaterLevel = new FloatOption("Botanist", "WaterLevel",
             "Water level", "Moisture below which a pot is watered. Vanilla: 0.3.",
             0.3f, 0.05f, 1f, 0.05f, hostOnly: true, balance: true);
+
+        public static readonly BoolOption BotanistUseSprinklers = new BoolOption("Botanist", "UseSprinklers",
+            "Leave sprinkler pots alone", "The botanist does not water pots a placed sprinkler covers. Vanilla: off.",
+            false, hostOnly: true, balance: true);
     }
 }

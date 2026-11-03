@@ -180,7 +180,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
         {
             float s = Speed(Options.PlantGrowthSpeed);
             float live = p.GrowSpeedMultiplier;
-            float want = Vanilla.Want(p, "grow", live, Math.Abs(s - 1f) > 1e-4f, Vanilla.Of(p, "grow", live) * s);
+            float want = Vanilla.Want(p, VSlot.Grow, live, Math.Abs(s - 1f) > 1e-4f, Vanilla.Of(p, VSlot.Grow, live) * s);
             if (Math.Abs(live - want) > 1e-4f) p.GrowSpeedMultiplier = want;
         }
 
@@ -188,7 +188,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
         {
             float s = Speed(Options.MushroomGrowthSpeed);
             int live = c._growTime;
-            int van = Vanilla.Of(c, "grow", live);
+            int van = Vanilla.Of(c, VSlot.Grow, live);
             int want = Math.Abs(s - 1f) > 1e-4f ? Math.Max(1, (int)Math.Round(van / s)) : van;
             if (live != want) c._growTime = want;
         }
@@ -197,7 +197,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
         {
             float s = Speed(Options.CauldronSpeed);
             int live = c.CookTime;
-            int van = Vanilla.Of(c, "cook", live);
+            int van = Vanilla.Of(c, VSlot.Cook, live);
             int want = Math.Abs(s - 1f) > 1e-4f ? Math.Max(1, (int)Math.Round(van / s)) : van;
             if (live != want) c.CookTime = want;
         }
@@ -206,12 +206,12 @@ namespace ActuallyWorkingEmployees.Features.Balance
         {
             float s = Speed(Options.MixingStationSpeed);
             int liveTime = m.MixTimePerItem;
-            int vanTime = Vanilla.Of(m, "time", liveTime);
+            int vanTime = Vanilla.Of(m, VSlot.Time, liveTime);
             int wantTime = Math.Abs(s - 1f) > 1e-4f ? Math.Max(1, (int)Math.Round(vanTime / s)) : vanTime;
             if (liveTime != wantTime) m.MixTimePerItem = wantTime;
 
             int liveMax = m.MaxMixQuantity;
-            int wantMax = Vanilla.Want(m, "max", liveMax, Options.EnableStationSpeed.Value && Vanilla.Active(Options.MixingStationMaxBatch), Options.MixingStationMaxBatch.Value);
+            int wantMax = Vanilla.Want(m, VSlot.Max, liveMax, Options.EnableStationSpeed.Value && Vanilla.Active(Options.MixingStationMaxBatch), Options.MixingStationMaxBatch.Value);
             if (liveMax != wantMax) m.MaxMixQuantity = wantMax;
         }
 
@@ -246,25 +246,27 @@ namespace ActuallyWorkingEmployees.Features.Balance
             bool active = Options.EnableEmployeeCapacityOverride.Value && Options.EmployeeCapacity.Value > 0;
             for (int i = 0; i < list.Count; i++)
             {
-                Il2CppScheduleOne.Property.Property p = list[i];
-                if (p == null) continue;
-                Il2CppScheduleOne.Property.Property prop = p;
-                Guarded("property " + prop.name, () =>
-                {
-                    int live = prop.EmployeeCapacity;
-                    int van = Vanilla.Of(prop, "capacity", live);
-                    int want = active ? Options.EmployeeCapacity.Value : van;
-                    if (live == want) return;
-                    int hired = prop.Employees != null ? prop.Employees.Count : 0;
-                    if (Options.EmployeeCapacityLossGuard.Value && want < hired)
-                    {
-                        Throttle.Warn("bal-property: guard " + prop.name, prop.name + " keeps capacity " + live + ": it has " + hired + " employees and the new limit is " + want + ".");
-                        return;
-                    }
-                    prop.EmployeeCapacity = want;
-                    Core.Log?.Msg("[bal-property] " + prop.name + ": capacity " + live + " -> " + want + ".");
-                });
+                Il2CppScheduleOne.Property.Property prop = list[i];
+                if (prop == null) continue;
+                try { SyncProperty(prop, active); }
+                catch (Exception ex) { Core.Failed(Name + ": property " + prop.name, ex); }
             }
+        }
+
+        private static void SyncProperty(Il2CppScheduleOne.Property.Property prop, bool active)
+        {
+            int live = prop.EmployeeCapacity;
+            int van = Vanilla.Of(prop, VSlot.Capacity, live);
+            int want = active ? Options.EmployeeCapacity.Value : van;
+            if (live == want) return;
+            int hired = prop.Employees != null ? prop.Employees.Count : 0;
+            if (Options.EmployeeCapacityLossGuard.Value && want < hired)
+            {
+                Throttle.Warn("bal-property: guard " + prop.name, prop.name + " keeps capacity " + live + ": it has " + hired + " employees and the new limit is " + want + ".");
+                return;
+            }
+            prop.EmployeeCapacity = want;
+            Core.Log?.Msg("[bal-property] " + prop.name + ": capacity " + live + " -> " + want + ".");
         }
 
         protected override string Details() => "properties=" + _properties;

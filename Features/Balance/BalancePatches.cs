@@ -19,11 +19,27 @@ namespace ActuallyWorkingEmployees.Features.Balance
     /// </summary>
     internal static class DurationPatches
     {
-        private static readonly Dictionary<string, string> _seen = new Dictionary<string, string>();
-        private static readonly Dictionary<string, string> _threshold = new Dictionary<string, string>();
+        // The postfixes run on every action start: they store numbers only, and the text is built when the dev command asks.
+        private struct Reading { internal float Result, Before, Value; internal bool PerUnit; }
+        private static readonly Dictionary<FloatOption, Reading> _seen = new Dictionary<FloatOption, Reading>();
+        private static float _critical = float.NaN, _water = float.NaN;
+        private static bool _clampLogged;
 
-        internal static string Seen(FloatOption o) => _seen.TryGetValue(o.Key, out string s) ? s : "not seen yet";
-        internal static string SeenThreshold(string which) => _threshold.TryGetValue(which, out string s) ? s : "not seen yet";
+        /// <summary>Gap kept between the critical level and the watering level when the pair has to be fixed.</summary>
+        private const float PairGap = 0.05f;
+
+        internal static string Seen(FloatOption o)
+        {
+            if (!_seen.TryGetValue(o, out Reading r)) return "not seen yet";
+            if (!r.PerUnit) return Eff.F(r.Result) + " s";
+            return Eff.F(r.Result) + " s (vanilla " + Eff.F(r.Before) + " s, " + Eff.F(r.Value) + " s per unit)";
+        }
+
+        internal static string SeenThreshold(string which)
+        {
+            float v = which == "critical" ? _critical : _water;
+            return float.IsNaN(v) ? "not seen yet" : Eff.F(v);
+        }
 
         /// <summary>Sets the action's seconds to the option. A vanilla value leaves the game's result untouched.</summary>
         internal static void Fixed(ref float result, FloatOption o)
@@ -33,7 +49,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
             {
                 if (!Vanilla.Active(o)) return;
                 result = o.Value;
-                _seen[o.Key] = Eff.F(result) + " s";
+                _seen[o] = new Reading { Result = result, Value = o.Value };
             }
             catch (Exception e) { Core.Caught("balance: duration " + o.Key, e); }
         }
@@ -47,9 +63,30 @@ namespace ActuallyWorkingEmployees.Features.Balance
                 if (!Vanilla.Active(o)) return;
                 float before = result;
                 result = before * o.Value;
-                _seen[o.Key] = Eff.F(result) + " s (vanilla " + Eff.F(before) + " s, " + Eff.F(o.Value) + " s per unit)";
+                _seen[o] = new Reading { Result = result, Before = before, Value = o.Value, PerUnit = true };
             }
             catch (Exception e) { Core.Caught("balance: per-unit duration " + o.Key, e); }
+        }
+
+        /// <summary>
+        /// The critical level and the watering level the botanist uses. The critical level must stay below the watering
+        /// level, otherwise a pot counts as urgent and as not yet dry at once; when the pair is inverted the watering level
+        /// is raised to the critical level plus a small gap. Returns true when it had to.
+        /// </summary>
+        private static bool Pair(out float critical, out float water)
+        {
+            critical = Vanilla.Active(Options.BotanistCriticalWaterLevel) ? Options.BotanistCriticalWaterLevel.Value : Options.BotanistCriticalWaterLevel.Default;
+            water = Vanilla.Active(Options.BotanistWaterLevel) ? Options.BotanistWaterLevel.Value : Options.BotanistWaterLevel.Default;
+            if (critical < water) { _clampLogged = false; return false; }
+            float asked = water;
+            water = Math.Min(1f, critical + PairGap);
+            if (!_clampLogged)
+            {
+                _clampLogged = true;
+                Core.Log?.Warning("[bal-botanist] Critical water level " + Eff.F(critical) + " is not below water level " + Eff.F(asked)
+                    + "; the botanist uses " + Eff.F(water) + " as water level.");
+            }
+            return true;
         }
 
         internal static void Threshold(ref float threshold)
@@ -57,15 +94,19 @@ namespace ActuallyWorkingEmployees.Features.Balance
             if (!Net.IsServer) return;
             try
             {
-                if (Math.Abs(threshold - 0.2f) < 0.001f && Vanilla.Active(Options.BotanistCriticalWaterLevel))
+                bool isCritical = Math.Abs(threshold - 0.2f) < 0.001f;
+                bool isWater = Math.Abs(threshold - 0.3f) < 0.001f;
+                if (!isCritical && !isWater) return;
+                bool clamped = Pair(out float critical, out float water);
+                if (isCritical && Vanilla.Active(Options.BotanistCriticalWaterLevel))
                 {
-                    threshold = Options.BotanistCriticalWaterLevel.Value;
-                    _threshold["critical"] = Eff.F(threshold);
+                    threshold = critical;
+                    _critical = critical;
                 }
-                else if (Math.Abs(threshold - 0.3f) < 0.001f && Vanilla.Active(Options.BotanistWaterLevel))
+                else if (isWater && (clamped || Vanilla.Active(Options.BotanistWaterLevel)))
                 {
-                    threshold = Options.BotanistWaterLevel.Value;
-                    _threshold["water"] = Eff.F(threshold);
+                    threshold = water;
+                    _water = water;
                 }
             }
             catch (Exception e) { Core.Caught("balance: water threshold", e); }
@@ -121,11 +162,20 @@ namespace ActuallyWorkingEmployees.Features.Balance
         }
     }
 
-    /// <summary>The watering and misting thresholds are literals (0.2 critical, 0.3 normal) passed into this check.</summary>
+    /// <summary>
+    /// The watering thresholds are literals (0.2 critical, 0.3 normal) passed into this check. The same check decides
+    /// which pots a botanist may water, so pots a sprinkler covers are refused here when that option is on.
+    /// </summary>
     [HarmonyPatch(typeof(WaterPotBehaviour), nameof(WaterPotBehaviour.AreTaskConditionsMetForContainer), new Type[] { typeof(GrowContainer), typeof(float) })]
     internal static class Awe_WaterThreshold_Patch
     {
-        private static void Prefix(ref float wateringThreshold) => DurationPatches.Threshold(ref wateringThreshold);
+        private static bool Prefix(GrowContainer container, ref float wateringThreshold, ref bool __result)
+        {
+            DurationPatches.Threshold(ref wateringThreshold);
+            if (!SprinklerCoverage.Refuses(container)) return true;
+            __result = false;
+            return false;
+        }
     }
 
     internal static class StationPatches
