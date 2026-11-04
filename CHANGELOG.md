@@ -6,7 +6,7 @@ project adheres to Semantic Versioning.
 
 ## [1.0.0] - 2026-11-04
 
-First public release. It replaces Harder Working Employees: remove `HarderWorkingEmployees.dll` from your Mods folder.
+First public release. Not compatible with Harder Working Employees: remove `HarderWorkingEmployees.dll` from your Mods folder.
 
 ### Added
 - Fixes for botanists, chemists, handlers and cleaners, running on the host.
