@@ -279,8 +279,8 @@ $rows.Add((New-Row 'status' -Steps @(
     })))
 
 # -- persistence: a value survives a save and a reload of the save in the same game --
-# MelonPreferences are written at shutdown only, so a full restart is not covered here; this proves the value and the
-# feature state are not dropped by the save/load cycle (ResetState on save start must not touch the options).
+# A full restart is covered by awe-prefs-persist.ps1; this proves the value and the feature state are not dropped by the
+# save/load cycle (ResetState on save start must not touch the options).
 $rows.Add((New-Row 'persist-reload' -Finally 'awe reset botanist.maxpots' -Run {
     param($Slot)
     $key = 'botanist.maxpots'

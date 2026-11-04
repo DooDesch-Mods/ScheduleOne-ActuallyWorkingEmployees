@@ -100,6 +100,8 @@ namespace ActuallyWorkingEmployees.Config
                 kept.Add(o);
             }
             _all = kept;
+            try { OptionsFile.Attach(categories.Values); }
+            catch (Exception e) { Core.Failed("options: move categories to " + OptionsFile.FileName, e); }
             _vanillaBalance = Find("general.usevanillabalance") as BoolOption;
             if (_vanillaBalance == null) Core.Log?.Warning("[Options] general.usevanillabalance is missing; balance options use their stored values.");
 
