@@ -136,6 +136,12 @@ namespace ActuallyWorkingEmployees
         public override void OnUpdate()
         {
             FeatureHost.TickAll(Time.deltaTime);
+            OptionsFile.Tick();
+        }
+
+        public override void OnApplicationQuit()
+        {
+            OptionsFile.Flush();
         }
     }
 }

@@ -8,7 +8,8 @@ namespace ActuallyWorkingEmployees.Config
     public enum OptionKind { Bool, Int, Float, Choice }
 
     /// <summary>
-    /// One player setting. The value is stored in a MelonPreferences entry in category <c>AWE_&lt;Group&gt;</c>; until
+    /// One player setting. The value is stored in a MelonPreferences entry in category <c>AWE_&lt;Group&gt;</c>, in the
+    /// mod's own file (<see cref="OptionsFile"/>); until
     /// <see cref="Options.Initialize"/> has bound the entry, the option reports its default. Text values use the
     /// invariant culture both ways, so the app, the dev console and the co-op sync exchange the same strings.
     ///
@@ -71,6 +72,7 @@ namespace ActuallyWorkingEmployees.Config
                 s = DefaultText;
             if (!TryStore(s, out error)) return false;
             if (Core.Verbose) Core.Log?.Msg("[Options] " + Key + " = " + ValueText);
+            OptionsFile.MarkDirty();
             RaiseChanged();
             return true;
         }
@@ -82,6 +84,7 @@ namespace ActuallyWorkingEmployees.Config
                 Core.Log?.Error("[Options] reset " + Key + " failed: " + error);
                 return;
             }
+            OptionsFile.MarkDirty();
             RaiseChanged();
         }
 

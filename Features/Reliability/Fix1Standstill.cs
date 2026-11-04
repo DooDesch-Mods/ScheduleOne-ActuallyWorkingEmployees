@@ -16,25 +16,26 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     /// so the vanilla warp after five failures never fires and the employee retries the same walk forever. The
     /// WalkCallback postfix counts such walks itself and warps the employee to the target at the configured count.
     /// A tick monitor catches the rest: an employee on a work task that stays within the standstill radius for the
-    /// configured time, far from its destination, is warped to it. After the configured attempts it is left alone
-    /// with a warning until it moves.
+    /// configured time is handled in steps. A walk that makes no progress is first stopped (what talking to the
+    /// employee does); an employee still far from its destination is then warped to it. After the configured attempts
+    /// it is left alone with a warning until it moves.
     /// </summary>
     internal sealed class Fix1Standstill : IFeature
     {
         internal const string FeatureName = "fix1-standstill";
         public string Name => FeatureName;
 
-        private sealed class Still { internal Vector3 Spot; internal float Since; internal int Tries; internal bool GaveUp; }
+        private sealed class Still { internal Vector3 Spot; internal float Since; internal int Tries; internal bool Stopped; internal bool GaveUp; }
 
         private static readonly Dictionary<int, Still> _still = new Dictionary<int, Still>();
         private static readonly Dictionary<int, int> _partial = new Dictionary<int, int>();
-        private static int _checks, _warps, _gaveUp, _partialWarps, _partialsCounted, _refused;
+        private static int _checks, _warps, _gaveUp, _partialWarps, _partialsCounted, _refused, _stops;
         private float _next;
 
         public void Init()
         {
 #if DEBUG
-            DevConsole.Register("standstill", "awe standstill [warp|partial]  (state of every employee / force the fix)", Dev);
+            DevConsole.Register("standstill", "awe standstill [warp|partial|freeze|thaw]  (state of every employee / force the fix / pin a walking employee in place)", Dev);
 #endif
         }
 
@@ -48,7 +49,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         public string Status =>
             "on=" + (Options.FixStandstill.Value ? 1 : 0) + (Options.FixPartialWalkLoop.Value ? 1 : 0)
             + " checks=" + _checks + " warps=" + _warps + " gaveup=" + _gaveUp
-            + " partial=" + _partialsCounted + " partialwarps=" + _partialWarps + " refused=" + _refused;
+            + " partial=" + _partialsCounted + " partialwarps=" + _partialWarps + " refused=" + _refused + " stops=" + _stops;
 
         public void Tick(float dt)
         {
@@ -74,15 +75,20 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             if (emp.Movement == null) { Rel.MsgOnce("fix1:nomove:" + id, "[" + FeatureName + "] " + Rel.Name(emp) + " has no movement component."); return; }
 
             NpcBehaviour active = emp.Behaviour.activeBehaviour;
-            // Not on a task, or walking: nothing to watch. Normal states, so no log line.
-            if (active == null || !active.Active || !Rel.IsWork(active) || emp.Movement.IsMoving) { _still.Remove(id); return; }
+            // Not on a task: nothing to watch. A normal state, so no log line.
+            if (active == null || !active.Active || !Rel.IsWork(active)) { _still.Remove(id); return; }
 
+            // IsMoving only says the agent holds a path with distance left (NPCMovement.IsMoving), not that it moves. A walk
+            // that never advances keeps it true, and the work behaviour waits for the walk forever; talking to the employee
+            // ends it through Movement.Stop(). Such a walk is watched like a standstill.
+            bool moving = emp.Movement.IsMoving;
             Vector3 dest = emp.Movement.CurrentDestination;
             Vector3 here = emp.transform.position;
             float dist = Vector3.Distance(here, dest);
-            // No live destination (the flag is cleared when a walk ends) or already there: the employee is working in place.
-            // A destination left over from an earlier walk is never warped to.
-            if (!emp.Movement._hasDestination || dest == Vector3.zero || dist <= Rel.FarFromTarget) { _still.Remove(id); return; }
+            bool destFar = emp.Movement._hasDestination && dest != Vector3.zero && dist > Rel.FarFromTarget;
+            // Standing without a live destination (the flag is cleared when a walk ends) or already there: the employee is
+            // working in place. A destination left over from an earlier walk is never warped to.
+            if (!moving && !destFar) { _still.Remove(id); return; }
 
             _checks++;
             if (!_still.TryGetValue(id, out Still s))
@@ -92,22 +98,38 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             }
             if (Vector3.Distance(here, s.Spot) > Options.StandstillRadius.Value)
             {
-                s.Spot = here; s.Since = Time.time; s.Tries = 0; s.GaveUp = false;
+                s.Spot = here; s.Since = Time.time; s.Tries = 0; s.Stopped = false; s.GaveUp = false;
                 return;
             }
             if (s.GaveUp || Time.time - s.Since < Options.StandstillSeconds.Value) return;
 
-            if (s.Tries >= Options.StandstillAttempts.Value)
+            string secs = Options.StandstillSeconds.Value.ToString("F0");
+            if (moving && !s.Stopped)
+            {
+                // First step for a walk without progress: end it the way a conversation does. The work behaviour then
+                // starts a fresh walk on its next tick.
+                s.Stopped = true;
+                emp.Movement.Stop();
+                _stops++;
+                Rel.Action("fix1.stop", "[Fix1] stopped the walk of " + Rel.Name(emp) + " (" + Rel.TypeName(active) + "): no progress for "
+                    + secs + "s, " + dist.ToString("F1") + " m from its destination.");
+                s.Spot = emp.transform.position;
+                s.Since = Time.time;
+                return;
+            }
+
+            if (!destFar || s.Tries >= Options.StandstillAttempts.Value)
             {
                 s.GaveUp = true;
                 _gaveUp++;
                 Core.Log?.Warning("[Fix1] gave up on " + Rel.Name(emp) + " (" + Rel.TypeName(active) + "): still " + dist.ToString("F1")
-                    + " m from its destination after " + s.Tries + " warp(s); the target is probably off the walkable floor.");
+                    + " m from its destination after " + (s.Stopped ? "a stopped walk and " : "") + s.Tries + " warp(s)"
+                    + (destFar ? "; the target is probably off the walkable floor." : "; no live destination far enough away to warp to."));
                 return;
             }
 
             s.Tries++;
-            Warp(emp, dest, "standstill " + Options.StandstillSeconds.Value.ToString("F0") + "s, try " + s.Tries, false);
+            Warp(emp, dest, "standstill " + secs + "s, try " + s.Tries, false);
             s.Spot = emp.transform.position;
             s.Since = Time.time;
         }
@@ -185,15 +207,54 @@ namespace ActuallyWorkingEmployees.Features.Reliability
                 float dist = Vector3.Distance(emp.transform.position, emp.Movement.CurrentDestination);
                 Core.Log?.Msg("[Dev] [Fix1] " + Rel.Name(emp) + ": behaviour=" + (a == null ? "none" : Rel.TypeName(a)) + " work=" + work
                     + " moving=" + emp.Movement.IsMoving + " distToDest=" + dist.ToString("F1")
-                    + " stillFor=" + (s == null ? "0" : (Time.time - s.Since).ToString("F1")) + "s tries=" + (s == null ? 0 : s.Tries) + " partial=" + p);
+                    + " stillFor=" + (s == null ? "0" : (Time.time - s.Since).ToString("F1")) + "s tries=" + (s == null ? 0 : s.Tries) + " partial=" + p
+                    + " pos=" + Pos(emp.transform.position));
                 if (first == null && work && emp.Movement.CurrentDestination != Vector3.zero) first = emp;
             }
             Core.Log?.Msg("[Dev] [Fix1] " + new Fix1Standstill().Status);
             if (mode == "") return;
+            if (mode == "freeze" || mode == "thaw") { DevFreeze(mode == "freeze"); return; }
             if (first == null) { Core.Log?.Warning("[Dev] awe standstill " + mode + ": no employee is on a work task with a destination."); return; }
             if (mode == "warp") Warp(first, first.Movement.CurrentDestination, "dev command", true);
             else if (mode == "partial") OnWalkResult(first.Behaviour.activeBehaviour, NPCMovement.WalkResult.Partial, true);
             else Core.Log?.Warning("[Dev] awe standstill: unknown mode '" + mode + "'.");
+        }
+
+        /// <summary>Position as "x,y,z" with two decimals in invariant culture, for the dev lines the tests parse.</summary>
+        private static string Pos(Vector3 v)
+            => v.x.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + ","
+             + v.y.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + ","
+             + v.z.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// freeze: sets NavMeshAgent.isStopped on the first employee walking for a work task. The agent keeps its path, so
+        /// IsMoving stays true while the employee stands still: a walk that never arrives. thaw: clears it on every employee.
+        /// </summary>
+        private static void DevFreeze(bool freeze)
+        {
+            int n = 0;
+            foreach (Employee emp in Rel.Employees())
+            {
+                UnityEngine.AI.NavMeshAgent agent = emp.Movement?._agent;
+                if (agent == null) continue;
+                if (!freeze)
+                {
+                    if (!agent.isStopped) continue;
+                    agent.isStopped = false;
+                    n++;
+                    Core.Log?.Msg("[Dev] [Fix1] thawed " + Rel.Name(emp) + ".");
+                    continue;
+                }
+                NpcBehaviour a = emp.Behaviour?.activeBehaviour;
+                if (a == null || !a.Active || !Rel.IsWork(a) || !emp.Movement.IsMoving) continue;
+                agent.isStopped = true;
+                Core.Log?.Msg("[Dev] [Fix1] froze " + Rel.Name(emp) + " (" + Rel.TypeName(a) + "): isStopped=true, moving=" + emp.Movement.IsMoving
+                    + ", " + Vector3.Distance(emp.transform.position, emp.Movement.CurrentDestination).ToString("F1") + " m from its destination, pos="
+                    + Pos(emp.transform.position) + ".");
+                return;
+            }
+            if (freeze) Core.Log?.Warning("[Dev] awe standstill freeze: no employee is walking for a work task.");
+            else Core.Log?.Msg("[Dev] [Fix1] thawed " + n + " employee(s).");
         }
 #endif
     }
