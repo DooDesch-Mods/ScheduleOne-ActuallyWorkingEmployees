@@ -207,7 +207,8 @@ namespace ActuallyWorkingEmployees.Features.Reliability
                 float dist = Vector3.Distance(emp.transform.position, emp.Movement.CurrentDestination);
                 Core.Log?.Msg("[Dev] [Fix1] " + Rel.Name(emp) + ": behaviour=" + (a == null ? "none" : Rel.TypeName(a)) + " work=" + work
                     + " moving=" + emp.Movement.IsMoving + " distToDest=" + dist.ToString("F1")
-                    + " stillFor=" + (s == null ? "0" : (Time.time - s.Since).ToString("F1")) + "s tries=" + (s == null ? 0 : s.Tries) + " partial=" + p);
+                    + " stillFor=" + (s == null ? "0" : (Time.time - s.Since).ToString("F1")) + "s tries=" + (s == null ? 0 : s.Tries) + " partial=" + p
+                    + " pos=" + Pos(emp.transform.position));
                 if (first == null && work && emp.Movement.CurrentDestination != Vector3.zero) first = emp;
             }
             Core.Log?.Msg("[Dev] [Fix1] " + new Fix1Standstill().Status);
@@ -218,6 +219,12 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             else if (mode == "partial") OnWalkResult(first.Behaviour.activeBehaviour, NPCMovement.WalkResult.Partial, true);
             else Core.Log?.Warning("[Dev] awe standstill: unknown mode '" + mode + "'.");
         }
+
+        /// <summary>Position as "x,y,z" with two decimals in invariant culture, for the dev lines the tests parse.</summary>
+        private static string Pos(Vector3 v)
+            => v.x.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + ","
+             + v.y.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + ","
+             + v.z.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
 
         /// <summary>
         /// freeze: sets NavMeshAgent.isStopped on the first employee walking for a work task. The agent keeps its path, so
@@ -242,7 +249,8 @@ namespace ActuallyWorkingEmployees.Features.Reliability
                 if (a == null || !a.Active || !Rel.IsWork(a) || !emp.Movement.IsMoving) continue;
                 agent.isStopped = true;
                 Core.Log?.Msg("[Dev] [Fix1] froze " + Rel.Name(emp) + " (" + Rel.TypeName(a) + "): isStopped=true, moving=" + emp.Movement.IsMoving
-                    + ", " + Vector3.Distance(emp.transform.position, emp.Movement.CurrentDestination).ToString("F1") + " m from its destination.");
+                    + ", " + Vector3.Distance(emp.transform.position, emp.Movement.CurrentDestination).ToString("F1") + " m from its destination, pos="
+                    + Pos(emp.transform.position) + ".");
                 return;
             }
             if (freeze) Core.Log?.Warning("[Dev] awe standstill freeze: no employee is walking for a work task.");

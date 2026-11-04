@@ -39,25 +39,34 @@ function Freeze([int]$timeoutSec = 120) {
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
         $r = Awe 'awe standstill freeze' 'froze |no employee is walking'
-        $line = @($r.Texts | Where-Object { $_ -match '\[Fix1\] froze (?<n>.+?) \((?<b>[^)]+)\): .* (?<d>[\d.]+) m from its destination' }) | Select-Object -First 1
-        if ($line -and $line -match '\[Fix1\] froze (?<n>.+?) \((?<b>[^)]+)\): .* (?<d>[\d.]+) m from its destination') {
+        $rx = '\[Fix1\] froze (?<n>.+?) \((?<b>[^)]+)\): .* (?<d>[\d.]+) m from its destination, pos=(?<p>[-\d.,]+)\.'
+        $line = @($r.Texts | Where-Object { $_ -match $rx }) | Select-Object -First 1
+        if ($line -and $line -match $rx) {
             Write-Host "  $line"
-            return @{ Name = $Matches.n; Behaviour = $Matches.b; Dist = [double]$Matches.d }
+            return @{ Name = $Matches.n; Behaviour = $Matches.b; Dist = [double]$Matches.d; Pos = (ParsePos $Matches.p) }
         }
         Start-Sleep -Seconds 3
     }
     return $null
 }
 
-# The dev line of one employee: @{Moving; Dist; Behaviour} or $null.
+function ParsePos([string]$p) {
+    $c = $p.Split(',') | ForEach-Object { [double]::Parse($_, [Globalization.CultureInfo]::InvariantCulture) }
+    , @($c)
+}
+function Moved($a, $b) {
+    [math]::Sqrt([math]::Pow($a[0] - $b[0], 2) + [math]::Pow($a[1] - $b[1], 2) + [math]::Pow($a[2] - $b[2], 2))
+}
+
+# The dev line of one employee: @{Found; Moving; Dist; Behaviour; Pos; Stops}.
 function State([string]$name) {
     $r = Awe 'awe standstill' 'on=\d+ checks='
-    $rx = '\[Fix1\] ' + [regex]::Escape($name) + ': behaviour=(?<b>\S+) work=\S+ moving=(?<m>\S+) distToDest=(?<d>[\d.]+)'
+    $rx = '\[Fix1\] ' + [regex]::Escape($name) + ': behaviour=(?<b>\S+) work=\S+ moving=(?<m>\S+) distToDest=(?<d>[\d.]+) .* pos=(?<p>[-\d.,]+)'
     $line = @($r.Texts | Where-Object { $_ -match $rx }) | Select-Object -First 1
     $stops = @($r.Texts | Where-Object { $_ -match ' stops=(\d+)' }) | Select-Object -First 1
     $s = if ($stops -and $stops -match ' stops=(\d+)') { [int]$Matches[1] } else { -1 }
     if (-not ($line -and $line -match $rx)) { return @{ Found = $false; Stops = $s } }
-    @{ Found = $true; Moving = $Matches.m; Dist = [double]$Matches.d; Behaviour = $Matches.b; Stops = $s }
+    @{ Found = $true; Moving = $Matches.m; Dist = [double]$Matches.d; Behaviour = $Matches.b; Pos = (ParsePos $Matches.p); Stops = $s }
 }
 
 try {
@@ -75,8 +84,9 @@ try {
     if ($f) {
         Start-Sleep -Seconds $WaitSec
         $st = State $f.Name
-        $stuck = $st.Found -and $st.Moving -eq 'True' -and [math]::Abs($st.Dist - $f.Dist) -lt 0.5
-        Result $stuck 'off-stuck' $(if ($st.Found) { "after $WaitSec s: moving=$($st.Moving) distToDest=$($st.Dist) (was $($f.Dist)) behaviour=$($st.Behaviour)" } else { "$($f.Name) not in the dev list" })
+        $m = if ($st.Found) { Moved $st.Pos $f.Pos } else { -1 }
+        $stuck = $st.Found -and $st.Moving -eq 'True' -and $st.Behaviour -eq $f.Behaviour -and $m -lt 0.5
+        Result $stuck 'off-stuck' $(if ($st.Found) { "after $WaitSec s: moved $('{0:N2}' -f $m) m, moving=$($st.Moving) distToDest=$($st.Dist) (was $($f.Dist)) behaviour=$($st.Behaviour)" } else { "$($f.Name) not in the dev list" })
     }
     $null = Awe 'awe standstill thaw' 'thawed'
 
@@ -91,10 +101,14 @@ try {
             @((Get-LogLines -Slot $Slot -Grep '[Fix1] stopped the walk of').Lines | Where-Object { $_ -match $rx }).Count -ge 1 }
         $st = State $f.Name
         Result ($null -eq $err -and $st.Stops -gt $before) 'on-stop-logged' $(if ($err) { $err } else { "stops $before -> $($st.Stops)" })
-        Start-Sleep -Seconds 5
-        $st = State $f.Name
-        $moved = $st.Found -and ([math]::Abs($st.Dist - $f.Dist) -ge 0.5 -or $st.Moving -ne 'True')
-        Result $moved 'on-recovered' $(if ($st.Found) { "moving=$($st.Moving) distToDest=$($st.Dist) (was $($f.Dist)) behaviour=$($st.Behaviour)" } else { "$($f.Name) not in the dev list" })
+        # Going on means leaving the frozen spot or switching to another task, within the wait.
+        $st = $null; $m = -1
+        $errGo = Wait-Until -TimeoutSec $WaitSec -What "$($f.Name) leaving the frozen spot" -Condition {
+            $script:st = State $f.Name
+            if (-not $script:st.Found) { return $false }
+            $script:m = Moved $script:st.Pos $f.Pos
+            $script:m -ge 0.5 -or $script:st.Behaviour -ne $f.Behaviour }
+        Result ($null -eq $errGo) 'on-recovered' $(if ($st -and $st.Found) { "moved $('{0:N2}' -f $m) m, moving=$($st.Moving) behaviour=$($st.Behaviour) (was $($f.Behaviour))" } else { $errGo })
     }
 }
 finally {
