@@ -11,6 +11,8 @@
 ![Sideload](https://img.shields.io/badge/Sideload-required-orange)
 ![Status](https://img.shields.io/badge/status-working-brightgreen)
 
+![Actually Working Employees](https://raw.githubusercontent.com/DooDesch-Mods/ScheduleOne-ActuallyWorkingEmployees/main/docs/img/header.jpg)
+
 ## Features
 
 Fixes for all four employee roles. They run on the host and stay on while you change settings:
@@ -223,6 +225,12 @@ The host publishes its changed values in the Steam lobby data. Only values that 
 ## Compatibility
 
 Actually Working Employees replaces Harder Working Employees and does not run next to it. Remove `HarderWorkingEmployees.dll` from your `Mods` folder. If both are loaded, the game log shows a warning.
+
+## Screenshots
+
+![The Employees app](https://raw.githubusercontent.com/DooDesch-Mods/ScheduleOne-ActuallyWorkingEmployees/main/docs/img/app.jpg)
+
+![The Setup Doctor](https://raw.githubusercontent.com/DooDesch-Mods/ScheduleOne-ActuallyWorkingEmployees/main/docs/img/diagnostics.jpg)
 
 ## Requirements
 
