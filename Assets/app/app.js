@@ -172,8 +172,6 @@ function stepButton(o, dir, rowNode) {
 
 function controls(o, rowNode) {
   const ctl = el('div', 'ctl');
-  // Portrait shows the default here, beside the controls, so a changed value adds no line and the buttons stay put.
-  if (!o.isDefault) ctl.appendChild(el('div', 'sub default ctl-default', 'Default: ' + o.defText));
 
   if (o.kind === 'bool') {
     const on = o.value === 'true';
@@ -222,12 +220,16 @@ function buildRow(o) {
   const row = el('div', 'row kind-' + o.kind + (changed ? ' changed' : '') + (app.vanilla && o.balance ? ' dim' : ''));
   row.setAttribute('id', rowId(o));
   const text = el('div', 'text');
-  text.appendChild(el('div', 'label', o.label));
+  // The default sits on the label line and is always laid out, invisible at the default value: the label wraps the
+  // same way in both states, so a change never adds a line and nothing below the row moves.
+  const head = el('div', 'head');
+  head.appendChild(el('div', 'label', o.label));
+  if (o.editable) head.appendChild(el('div', 'sub default' + (changed ? '' : ' idle'), 'Default: ' + o.defText));
+  text.appendChild(head);
   // The range leads the help line: at its end the text breaks after the hyphen ("1-" / "32"), and Latin-1 has no
   // non-breaking hyphen.
   const help = isNumber(o) && o.editable ? rangeText(o) + (o.help ? ' ' + o.help : '') : o.help;
   if (help) text.appendChild(el('div', 'help', help));
-  if (changed) text.appendChild(el('div', 'sub default', 'Default: ' + o.defText));
   row.appendChild(text);
 
   if (o.editable) {

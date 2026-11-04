@@ -192,13 +192,17 @@ body {
 .row .help { color: var(--muted); font-size: 12px; }
 .row .sub { color: var(--faint); font-size: 12px; }
 .row.changed .sub.default { color: var(--accent); }
-/* The controls sit at the top of the row, beside the label: the "Default" line a change adds grows the row
- * downwards and never moves a button. The text's top padding lines the label up with the control centre. */
+/* Label and "Default: X" share one line, so a change never adds height to the row. */
+.row .head { flex-direction: row; align-items: center; gap: 8px; min-width: 0; }
+.row .head .label { flex: 0 1 auto; min-width: 0; }
+.row .head .sub.default { flex: none; white-space: nowrap; }
+.row .head .sub.default.idle { opacity: 0; }
+/* The controls sit at the top of the row, beside the label. The text's top padding lines the label up with the
+ * control centre. */
 .row { align-items: flex-start; }
 .row .text { padding-top: 5px; }
 .row .ctl { flex: none; flex-direction: row; align-items: center; gap: 4px; }
 .reset-slot { flex: none; width: 28px; height: 28px; }
-.ctl-default { display: none; }
 
 .value { min-width: 64px; text-align: center; font-weight: 700; }
 .value.locked { min-width: 0; color: var(--muted); font-weight: 600; }
@@ -332,8 +336,4 @@ body {
   .row .ctl { justify-content: flex-end; flex-wrap: wrap; }
   .row .text { padding-top: 0; }
   .row.kind-bool .text { padding-top: 2px; }
-  .row .text .sub.default { display: none; }
-  .row .ctl .ctl-default { display: flex; flex: 1; min-width: 0; white-space: nowrap; }
-  .row.kind-bool .text .sub.default { display: flex; }
-  .row.kind-bool .ctl .ctl-default { display: none; }
 }

@@ -140,6 +140,55 @@ $v2 = if ($p2 -match '= (\d+)') { [int]$Matches[1] } else { -99 }
 Result ($pos0 -ne '(none)' -and $pos0 -eq $pos1 -and $v2 -eq $v0 + 2) 'plus-stays-put' "plus at '$pos0' then '$pos1', value '$p0' -> '$p2'"
 S1 run "awe reset $pk" | Out-Null
 
+# A change adds "Default: X" on the label line, so neither the row nor the row below it moves. Checked for a number
+# row and for a switch row.
+function RowBox([string]$row) {
+  $js = "(function(){ var r=document.querySelector('#$row'); if(!r) return '(none)'; var a=r.getBoundingClientRect(); var n=r.nextElementSibling; var b=n?n.getBoundingClientRect():null; return Math.round(a.height)+'|'+(b?Math.round(b.top):'end'); })()"
+  return (Js $js).Split("`n")[-1].Trim('"', ' ')
+}
+S1 click awe '#group-property' | Out-Null
+Settle
+S1 click awe '#group-botanist' | Out-Null
+Settle
+$h0 = RowBox $prow
+S1 click awe "#$prow .opt-plus" | Out-Null
+Settle
+$h1 = RowBox $prow
+$dflt = (Js "document.querySelector('#$prow .head .default') ? document.querySelector('#$prow .head .default').textContent : '(none)'").Split("`n")[-1].Trim('"', ' ')
+Result ($h0 -ne '(none)' -and $h0 -eq $h1 -and $dflt -match '^Default: ') 'number-row-no-jump' "height|next before '$h0' after '$h1', default='$dflt'"
+S1 run "awe reset $pk" | Out-Null
+
+$bk = 'general.disableemployeecollision'
+$brow = 'opt-' + $bk.Replace('.', '-')
+S1 run "awe reset $bk" | Out-Null
+S1 click awe '#group-property' | Out-Null
+Settle
+S1 click awe '#group-general' | Out-Null
+Settle
+$b0 = RowBox $brow
+S1 click awe "#$brow .opt-switch" | Out-Null
+Settle
+$b1 = RowBox $brow
+Result ($b0 -ne '(none)' -and $b0 -eq $b1) 'switch-row-no-jump' "height|next before '$b0' after '$b1'"
+S1 run "awe reset $bk" | Out-Null
+
+# Portrait: the label column is narrow there, so a long label is where an added "Default" would wrap.
+S1 eval awe "s1.setOrientation('portrait'); s1.orientation" | Out-Null
+Settle; Settle
+S1 click awe '#back' | Out-Null
+Settle
+S1 click awe '#group-general' | Out-Null
+Settle
+$q0 = RowBox $brow
+S1 click awe "#$brow .opt-switch" | Out-Null
+Settle
+$q1 = RowBox $brow
+Result ($q0 -ne '(none)' -and $q0 -eq $q1) 'switch-row-no-jump-portrait' "height|next before '$q0' after '$q1'"
+S1 run "awe reset $bk" | Out-Null
+S1 click awe '#back' | Out-Null
+S1 eval awe "s1.setOrientation('landscape'); s1.orientation" | Out-Null
+Settle; Settle
+
 # The help line names the range, and a typed number below it is set to the minimum with a green note. The bridge
 # cannot type, so the field gets its text and a page-raised change event, which carries only its type (the app then
 # reads the field's text).
