@@ -62,6 +62,6 @@ $rows.Add((New-Row 'diag-app-state' -Finally @("awe reset $badgeOpt", "awe reset
 #   #group-diagnostics  #diag  #diag-refresh  #diag-badges  #diag-badges-count  #diag-badges-note  .badge-row
 #   #diag-doctor  #diag-doctor-run  #diag-doctor-summary  #diag-doctor-empty  #diag-doctor-more  .finding
 #   #diag-analytics  #diag-analytics-reset  #diag-analytics-status  .an-row
-#   #opt-diagnostics-<id>  with .opt-on .opt-off .opt-minus .opt-plus .opt-field .opt-reset
+#   #opt-diagnostics-<id>  with .opt-switch (class on when on) .opt-minus .opt-plus .opt-field .opt-reset
 #   #group-hint (hint above the open group, visible text under .hint, class hidden when empty)  #band  #band-text
-#   #reset-all  #reset-all-confirm  #reset-all-cancel  #reset-group  #preset-fast (host and single player only)
+#   #reset-all  #reset-all-confirm  #reset-all-cancel  #reset-group  #preset-fast  #preset-fast-confirm  #preset-fast-cancel (preset: host and single player only)
