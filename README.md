@@ -11,6 +11,8 @@
 ![Sideload](https://img.shields.io/badge/Sideload-required-orange)
 ![Status](https://img.shields.io/badge/status-working-brightgreen)
 
+[![MLVScan ActuallyWorkingEmployees.dll](https://mlvscan.com/attestations/att_jbFHyIGR4gisRIdLqGpCtKQ3/badge.svg)](https://mlvscan.com/attestations/att_jbFHyIGR4gisRIdLqGpCtKQ3)
+
 ![Actually Working Employees](https://raw.githubusercontent.com/DooDesch-Mods/ScheduleOne-ActuallyWorkingEmployees/main/docs/img/header.jpg)
 
 ## Features
