@@ -66,7 +66,16 @@ takes a free-form body that returns `$null` or a reason. Replace a placeholder b
 | `fix1-todo` .. `fix6-todo`, `fix7-packager-routes`, `fix8-harvest-time`, `bal-todo`, `coop-sync`, `app-todo` | placeholders (SKIP) for the feature checks |
 | `log-no-failed` | no `[Failed]` line and no failed option reset in the whole log, so run it last |
 
-`persist-reload` does not cover a restart: MelonPreferences are written at shutdown only, and `Save()` from a command can kill the game.
+`persist-reload` does not cover a restart; `awe-prefs-persist.ps1` does.
+
+## Scripts that start the game themselves
+
+| Script | Proves |
+|---|---|
+| `awe-prefs-persist.ps1 -Slot <slot> [-Build <name>]` | a changed option survives a restart while `MelonPreferences.cfg` cannot be saved (read-only, the state another mod's failed save leaves): AWE writes `UserData/ActuallyWorkingEmployees.cfg`, takes values over from the shared file on the first start, and the game is quit by closing its window so MelonLoader's quit save runs |
+| `awe-stuckwalk.ps1 -Slot <slot> [-Build <name>]` | a walk that never advances (`awe standstill freeze`: the agent keeps its path, `IsMoving` stays true) stays stuck with Fix 1 off and is stopped by Fix 1 on, after which the employee moves on |
+
+`-Build` takes a catalog name (main checkout) or the worktree folder name, not a full path.
 
 ## awe-coop.ps1 checks
 
