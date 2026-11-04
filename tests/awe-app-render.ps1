@@ -4,8 +4,11 @@ Renders every page of the AWE phone app in a running slot and changes one value 
     pwsh -File tests/awe-app-render.ps1 -Slot mptest2 -OutDir <folder>
 
 Per group: click '#group-<name>' through the real raycast, read the pane title back, take a screenshot.
-Then the Diagnostics panels (doctor run button) and one bool option switched on by clicking its '.opt-on'
-button; 'awe get' must show the new value. Prints PASS or FAIL per check and a SUMMARY line.
+Then the Diagnostics panels (doctor run button), one bool option switched on and off by clicking its
+'.opt-switch' ('awe get' must show each value), a vanilla number field showing "Vanilla", plus staying in place
+over two clicks, the range in the help line, a typed number below the range set to the minimum, and the Fast preset's
+confirm step (Cancel changes nothing, Apply sets the work speeds). Prints PASS or FAIL per check and a SUMMARY line.
+The preset check ends with 'awe reset all'.
 #>
 param(
     [Parameter(Mandatory)][string]$Slot,
@@ -81,18 +84,101 @@ if ($groups -contains 'group-diagnostics') {
     foreach ($o in $diagOpts) { S1 run "awe reset $o" | Out-Null }
 }
 
-# One value changed by a click on the row's On button.
+# One value switched on by a click on the row's switch, and off again by a second click.
 $group = $ClickKey.Split('.')[0]
 $row = 'opt-' + $ClickKey.Replace('.', '-')
 S1 run "awe reset $ClickKey" | Out-Null
 S1 click awe "#group-$group" | Out-Null
 Settle
 $before = S1 run "awe get $ClickKey"
-$c = S1 click awe "#$row .opt-on"
+$c = S1 click awe "#$row .opt-switch"
 Settle
 $after = S1 run "awe get $ClickKey"
+$cls = (Js "document.querySelector('#$row .opt-switch') ? document.querySelector('#$row .opt-switch').className : '(none)'").Split("`n")[-1].Trim('"', ' ')
+$rowCls = (Js "document.getElementById('$row') ? document.getElementById('$row').className : '(none)'").Split("`n")[-1].Trim('"', ' ')
 Shot "click-$($ClickKey.Replace('.', '-'))" | Out-Null
 Result ($before -match '= Off' -and $after -match '= On') 'click-changes-value' "before='$($before.Split("`n")[-1])' after='$($after.Split("`n")[-1])' click=$($c.Split("`n")[-1])"
+Result ($cls -match '\bon\b' -and $rowCls -match '\bchanged\b') 'switch-shows-on' "switch='$cls' row='$rowCls'"
+S1 click awe "#$row .opt-switch" | Out-Null
+Settle
+$back = S1 run "awe get $ClickKey"
+Result ($back -match '= Off') 'click-switches-back' "after second click='$($back.Split("`n")[-1])'"
 S1 run "awe reset $ClickKey" | Out-Null
+
+# A vanilla number shows the word in its field, and its minus button is disabled (nothing below vanilla).
+$vk = 'botanist.walkspeed'
+$vrow = 'opt-' + $vk.Replace('.', '-')
+S1 run "awe reset $vk" | Out-Null
+S1 click awe '#group-botanist' | Out-Null
+Settle
+$field = (Js "document.querySelector('#$vrow .opt-field') ? document.querySelector('#$vrow .opt-field').value : '(none)'").Split("`n")[-1].Trim('"', ' ')
+$minus = (Js "document.querySelector('#$vrow .opt-minus') ? document.querySelector('#$vrow .opt-minus').className : '(none)'").Split("`n")[-1].Trim('"', ' ')
+Shot 'botanist-vanilla' | Out-Null
+Result ($field -eq 'Vanilla' -and $minus -match '\bdisabled\b') 'vanilla-field' "field='$field' minus='$minus'"
+
+# Plus stays where it is once the value differs from its default (the reset button takes a reserved slot), so two
+# clicks in a row both land on plus.
+$pk = 'botanist.maxpots'
+$prow = 'opt-' + $pk.Replace('.', '-')
+$posJs = "(function(){ var b=document.querySelector('#$prow .opt-plus'); if(!b) return '(none)'; var r=b.getBoundingClientRect(); return Math.round(r.left)+','+Math.round(r.top); })()"
+S1 run "awe reset $pk" | Out-Null
+S1 click awe '#group-property' | Out-Null
+Settle
+S1 click awe '#group-botanist' | Out-Null
+Settle
+$p0 = (S1 run "awe get $pk").Split("`n") | Where-Object { $_ -match '=' } | Select-Object -Last 1
+$pos0 = (Js $posJs).Split("`n")[-1].Trim('"', ' ')
+S1 click awe "#$prow .opt-plus" | Out-Null
+Settle
+$pos1 = (Js $posJs).Split("`n")[-1].Trim('"', ' ')
+S1 click awe "#$prow .opt-plus" | Out-Null
+Settle
+$p2 = (S1 run "awe get $pk").Split("`n") | Where-Object { $_ -match '=' } | Select-Object -Last 1
+Shot 'plus-twice' | Out-Null
+$v0 = if ($p0 -match '= (\d+)') { [int]$Matches[1] } else { -99 }
+$v2 = if ($p2 -match '= (\d+)') { [int]$Matches[1] } else { -99 }
+Result ($pos0 -ne '(none)' -and $pos0 -eq $pos1 -and $v2 -eq $v0 + 2) 'plus-stays-put' "plus at '$pos0' then '$pos1', value '$p0' -> '$p2'"
+S1 run "awe reset $pk" | Out-Null
+
+# The help line names the range, and a typed number below it is set to the minimum with a green note. The bridge
+# cannot type, so the field gets its text and a page-raised change event, which carries only its type (the app then
+# reads the field's text).
+$ck = 'chemist.chemistrystationtime'
+$crow = 'opt-' + $ck.Replace('.', '-')
+S1 run "awe reset $ck" | Out-Null
+S1 click awe '#group-chemist' | Out-Null
+Settle
+$help = (Js "document.querySelector('#$crow .help') ? document.querySelector('#$crow .help').textContent : '(none)'").Split("`n")[-1].Trim('"', ' ')
+$typed = (Js "(function(){ var f=document.querySelector('#$crow .opt-field'); if(!f) return 'no field'; f.value='1'; var ev; try { ev=new Event('change'); } catch(e) { ev={type:'change'}; } f.dispatchEvent(ev); return 'sent'; })()").Split("`n")[-1].Trim('"', ' ')
+Settle
+$cv = (S1 run "awe get $ck").Split("`n") | Where-Object { $_ -match '=' } | Select-Object -Last 1
+$note = (Js "document.getElementById('note').className + '|' + document.getElementById('note').textContent").Split("`n")[-1].Trim('"', ' ')
+Shot 'typed-below-min' | Out-Null
+Result ($help -match '^Range: 2-120\. ') 'range-in-help' "help='$help'"
+Result ($cv -match '= 2\b' -and $note -match '^note info\|Set to 2, the minimum\.$') 'typed-clamps-to-min' "typed=$typed value='$cv' note='$note'"
+S1 run "awe reset $ck" | Out-Null
+
+# The Fast preset asks first: the first click shows the confirm pair, Cancel leaves every value alone.
+S1 run 'awe reset all' | Out-Null
+S1 click awe '#group-botanist' | Out-Null
+Settle
+S1 click awe '#preset-fast' | Out-Null
+Settle
+$confirm = (Js "!!document.getElementById('preset-fast-confirm') && !!document.getElementById('preset-fast-cancel')").Split("`n")[-1].Trim('"', ' ')
+Shot 'preset-fast-confirm' | Out-Null
+S1 click awe '#preset-fast-cancel' | Out-Null
+Settle
+$ws = S1 run 'awe get botanist.workspeed'
+$gone = (Js "!document.getElementById('preset-fast-confirm') && !!document.getElementById('preset-fast')").Split("`n")[-1].Trim('"', ' ')
+Result ($confirm -eq 'true' -and $gone -eq 'true' -and $ws -notmatch '= 2\b') 'preset-fast-cancel' "confirm shown=$confirm back to Fast=$gone workspeed='$($ws.Split("`n")[-1])'"
+S1 click awe '#preset-fast' | Out-Null
+Settle
+S1 click awe '#preset-fast-confirm' | Out-Null
+Settle
+$ws = S1 run 'awe get botanist.workspeed'
+$count = (Js "document.querySelector('#group-botanist .count') ? document.querySelector('#group-botanist .count').textContent : '(none)'").Split("`n")[-1].Trim('"', ' ')
+Shot 'preset-fast-applied' | Out-Null
+Result ($ws -match '= 2\b' -and $count -match '^\d+$') 'preset-fast-apply' "workspeed='$($ws.Split("`n")[-1])' botanist count='$count'"
+S1 run 'awe reset all' | Out-Null
 
 Write-Host "SUMMARY app-render pass=$pass fail=$fail"

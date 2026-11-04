@@ -3,15 +3,15 @@ namespace ActuallyWorkingEmployees.Config
     public static partial class Options
     {
         public static readonly FloatOption ChemistWalkSpeed = new FloatOption("Chemist", "WalkSpeed",
-            "Walk speed", "Chemist walking speed. Vanilla: the game's value.",
+            "Walk speed", "",
             -1f, 0.5f, 6f, 0.1f, hostOnly: true, balance: true, vanillaSentinel: true);
 
         public static readonly IntOption ChemistDailyWage = new IntOption("Chemist", "DailyWage",
-            "Daily wage", "Chemist daily wage. Vanilla: the game's value.",
+            "Daily wage", "",
             -1, 0, 10000, 10, hostOnly: true, balance: true, vanillaSentinel: true);
 
         public static readonly IntOption ChemistSigningFee = new IntOption("Chemist", "SigningFee",
-            "Signing fee", "One-time cost to hire a chemist. Vanilla: the game's value.",
+            "Signing fee", "One-time cost to hire a chemist.",
             -1, 0, 100000, 50, hostOnly: true, balance: true, vanillaSentinel: true);
 
         public static readonly IntOption ChemistMaxStations = new IntOption("Chemist", "MaxStations",

@@ -22,6 +22,7 @@ const app = {
   role: '',
   group: 0,
   confirmAll: false,
+  confirmFast: false,
   notice: '',       // the host-controlled text shown on a client, empty when it is off
   hints: {},        // group name -> hint text shown above that group's options
 };
@@ -47,7 +48,9 @@ function button(cls, iconName, text, onClick) {
   return b;
 }
 
-const valueOf = e => (e && e.value !== undefined && e.value !== null ? e.value : e && e.target ? e.target.value : '');
+// The host's change event carries the field text in `value`; an event the page raises itself carries only its type,
+// so an empty `value` falls back to the field's own text.
+const valueOf = e => (e && e.value ? e.value : e && e.target && e.target.value ? e.target.value : '');
 
 // ---- the host ---------------------------------------------------------------------------------------------------
 
@@ -65,11 +68,12 @@ function call(name, arg) {
   catch (e) { console.error('[awe] ' + name + ' answered something that is not JSON: ' + e.message); return { ok: false, msg: 'Something went wrong.' }; }
 }
 
-function say(msg) {
+// A note under the panel: red for an error, green ('info') for a change the app made on its own.
+function say(msg, kind) {
   const n = $('note');
   if (!msg) { n.className = 'note hidden'; return; }
   n.textContent = msg;
-  n.className = 'note';
+  n.className = kind === 'info' ? 'note info' : 'note';
 }
 
 // ---- helpers on an option ---------------------------------------------------------------------------------------
@@ -89,18 +93,42 @@ function stepped(o, dir) {
   return next;
 }
 
+// True when a step in that direction would not change the value, so its button is shown as disabled.
+function atLimit(o, dir) {
+  const cur = parseFloat(o.value);
+  if (dir < 0) return o.sentinel ? cur === -1 : cur <= o.min;
+  return cur >= o.max;
+}
+
+// What the field shows: "Vanilla" for the sentinel, the number otherwise.
+function fieldText(o) { return o.sentinel && parseFloat(o.value) === -1 ? String(o.text) : String(o.value); }
+
+// The allowed range, shown in the help line so nobody has to find it by typing a wrong number.
+function rangeText(o) { return 'Range: ' + o.min + '-' + o.max + '.'; }
+
+// A typed number outside the range is set to the nearest limit, with a note naming it. Text that is no number goes
+// to the host unchanged, which answers with its own error. "Vanilla" means -1 where the option has that value.
+function clampTyped(o, v) {
+  if (o.sentinel && v.toLowerCase() === String(o.text).toLowerCase()) return { value: '-1', note: '' };
+  const n = parseFloat(v);
+  if (isNaN(n) || (o.sentinel && n === -1)) return { value: v, note: '' };
+  if (n < o.min) return { value: String(o.min), note: 'Set to ' + o.min + ', the minimum.' };
+  if (n > o.max) return { value: String(o.max), note: 'Set to ' + o.max + ', the maximum.' };
+  return { value: v, note: '' };
+}
+
 function changedCount(g) { return g.options.filter(o => !o.isDefault).length; }
 
 // ---- rows -------------------------------------------------------------------------------------------------------
 
-function commit(o, raw, rowNode) {
+function commit(o, raw, rowNode, note) {
   const r = call('set', { key: o.key, value: String(raw) });
   if (!r.ok) {
     say(r.msg || 'Something went wrong.');
     redrawRow(o, rowNode);
     return;
   }
-  say('');
+  say(note || '', 'info');
   refreshOne(o, r.option, rowNode);
 }
 
@@ -116,6 +144,7 @@ function refreshOne(o, fresh, rowNode) {
   Object.assign(o, fresh);
   redrawRow(o, rowNode);
   drawGroups();
+  drawPaneSub();
   app.raw = callRaw('list');
   if (String(o.key).indexOf('diagnostics.') === 0) renderDiag();
   if (String(o.key).indexOf('stations.') === 0) drawHint();
@@ -136,50 +165,69 @@ function redrawRow(o, rowNode) {
   parent.replaceChild(buildRow(o), rowNode);
 }
 
+function stepButton(o, dir, rowNode) {
+  const cls = 'ghost small square ' + (dir < 0 ? 'opt-minus' : 'opt-plus') + (atLimit(o, dir) ? ' disabled' : '');
+  return button(cls, dir < 0 ? 'i-minus' : 'i-plus', null, () => { if (!atLimit(o, dir)) commit(o, stepped(o, dir), rowNode); });
+}
+
 function controls(o, rowNode) {
   const ctl = el('div', 'ctl');
+  // Portrait shows the default here, beside the controls, so a changed value adds no line and the buttons stay put.
+  if (!o.isDefault) ctl.appendChild(el('div', 'sub default ctl-default', 'Default: ' + o.defText));
 
   if (o.kind === 'bool') {
-    ctl.appendChild(button('small opt-on' + (o.value === 'true' ? '' : ' off'), null, 'On', () => { if (o.value !== 'true') commit(o, 'true', rowNode); }));
-    ctl.appendChild(button('small opt-off' + (o.value === 'false' ? '' : ' off'), null, 'Off', () => { if (o.value !== 'false') commit(o, 'false', rowNode); }));
+    const on = o.value === 'true';
+    const sw = el('button', 'switch opt-switch' + (on ? ' on' : ''));
+    sw.appendChild(el('div', 'knob'));
+    sw.addEventListener('click', () => commit(o, on ? 'false' : 'true', rowNode));
+    ctl.appendChild(sw);
   } else if (o.kind === 'choice') {
     const seg = el('div', 'seg');
     for (const c of o.choices || []) {
-      seg.appendChild(button('small opt-choice' + (c.toLowerCase() === String(o.value).toLowerCase() ? '' : ' off'), null, c, () => commit(o, c, rowNode)));
+      const picked = c.toLowerCase() === String(o.value).toLowerCase();
+      seg.appendChild(button('small opt-choice' + (picked ? ' on' : ''), null, c, () => { if (!picked) commit(o, c, rowNode); }));
     }
     ctl.appendChild(seg);
   } else if (isNumber(o)) {
-    ctl.appendChild(button('ghost small square opt-minus', 'i-minus', null, () => commit(o, stepped(o, -1), rowNode)));
+    ctl.appendChild(stepButton(o, -1, rowNode));
     const f = el('input', 'field opt-field');
     f.setAttribute('type', 'text');
-    f.value = String(o.value);
-    let done = o.value;
+    f.value = fieldText(o);
+    let done = f.value;
     const send = e => {
       const v = String(valueOf(e) || '').trim();
       if (v === done) return;
       done = v;
-      commit(o, v, rowNode);
+      const c = clampTyped(o, v);
+      commit(o, c.value, rowNode, c.note);
     };
     f.addEventListener('change', send);
     f.addEventListener('keydown', e => { if (e.key === 'Enter') send(f); });
     ctl.appendChild(f);
-    ctl.appendChild(button('ghost small square opt-plus', 'i-plus', null, () => commit(o, stepped(o, 1), rowNode)));
+    ctl.appendChild(stepButton(o, 1, rowNode));
   }
 
+  // The reset slot is always there, empty at the default, so the controls never move when a value changes and
+  // a repeated click on + keeps landing on +.
   if (!o.isDefault) {
     ctl.appendChild(button('ghost small square opt-reset', 'i-reset', null, () => reset(o, rowNode)));
+  } else {
+    ctl.appendChild(el('div', 'reset-slot'));
   }
   return ctl;
 }
 
 function buildRow(o) {
-  const row = el('div', 'row' + (app.vanilla && o.balance ? ' dim' : ''));
+  const changed = !o.isDefault && o.editable;
+  const row = el('div', 'row kind-' + o.kind + (changed ? ' changed' : '') + (app.vanilla && o.balance ? ' dim' : ''));
   row.setAttribute('id', rowId(o));
   const text = el('div', 'text');
   text.appendChild(el('div', 'label', o.label));
-  if (o.help) text.appendChild(el('div', 'help', o.help));
-  if (isNumber(o) && o.text !== String(o.value)) text.appendChild(el('div', 'sub', o.text));
-  if (!o.isDefault && o.editable) text.appendChild(el('div', 'sub', 'Default: ' + o.defText));
+  // The range leads the help line: at its end the text breaks after the hyphen ("1-" / "32"), and Latin-1 has no
+  // non-breaking hyphen.
+  const help = isNumber(o) && o.editable ? rangeText(o) + (o.help ? ' ' + o.help : '') : o.help;
+  if (help) text.appendChild(el('div', 'help', help));
+  if (changed) text.appendChild(el('div', 'sub default', 'Default: ' + o.defText));
   row.appendChild(text);
 
   if (o.editable) {
@@ -210,12 +258,10 @@ function drawGroups() {
     const b = el('div', 'group' + (i === app.group ? ' on' : ''));
     b.setAttribute('id', 'group-' + String(g.name).toLowerCase());
     b.appendChild(icon(groupIcon(g.name)));
-    // The count sits on its own line under the name, so a long name such as "Diagnostics" keeps its room.
-    const label = el('div', 'label');
-    label.appendChild(el('div', 'name', g.name));
+    b.appendChild(el('div', 'name', g.name));
+    // The number of changed options, so all nine groups keep one line and fit without a scrollbar.
     const n = changedCount(g);
-    if (n > 0) label.appendChild(el('div', 'count', n + ' changed'));
-    b.appendChild(label);
+    if (n > 0) b.appendChild(el('div', 'count', n));
     b.appendChild(icon('i-next', 'dim next'));
     b.addEventListener('click', () => openGroup(i));
     nav.appendChild(b);
@@ -231,6 +277,12 @@ function drawPane() {
   if (!g) { rows.appendChild(el('div', 'empty', 'No settings.')); return; }
 
   head.appendChild(el('div', 'pane-title', g.name));
+  const changed = changedCount(g);
+  if (changed > 0 && g.name !== 'Diagnostics') {
+    const sub = el('div', 'pane-sub', changed + ' changed');
+    sub.setAttribute('id', 'pane-changed');
+    head.appendChild(sub);
+  }
   if (g.name === 'Diagnostics') {
     const b = button('ghost small', null, 'Refresh', () => renderDiag());
     b.setAttribute('id', 'diag-refresh');
@@ -256,9 +308,23 @@ function drawPane() {
     rows.appendChild(box);
   }
   if (!g.options.length) { rows.appendChild(el('div', 'empty', 'No settings.')); return; }
-  for (const o of g.options) rows.appendChild(buildRow(o));
+  const list = el('div', 'list');
+  list.setAttribute('id', 'list');
+  for (const o of g.options) list.appendChild(buildRow(o));
+  rows.appendChild(list);
   drawHint();
   if (g.name === 'Diagnostics') renderDiag();
+}
+
+// The "N changed" note in the pane head, kept current after a single row changed.
+function drawPaneSub() {
+  const g = app.groups[app.group];
+  const old = $('pane-changed');
+  if (!g) return;
+  const n = changedCount(g);
+  if (old && n > 0) { old.textContent = n + ' changed'; return; }
+  // Appearing or vanishing also adds or drops Reset group, so the whole pane is rebuilt.
+  if (!!old !== n > 0) drawPane();
 }
 
 // The hint of the open group, from the last list answer.
@@ -392,7 +458,14 @@ function drawBar() {
   const end = $('bar-end');
   end.replaceChildren();
   // A client resets its own local options; the host's values stay as they are.
-  if (app.confirmAll) {
+  if (app.confirmFast) {
+    const yes = button('small', 'i-fast', 'Apply fast preset?', () => { app.confirmFast = false; doPreset('fast'); });
+    yes.setAttribute('id', 'preset-fast-confirm');
+    const no = button('ghost small', null, 'Cancel', () => { app.confirmFast = false; drawBar(); });
+    no.setAttribute('id', 'preset-fast-cancel');
+    end.appendChild(yes);
+    end.appendChild(no);
+  } else if (app.confirmAll) {
     const yes = button('danger small', null, 'Reset all?', () => { app.confirmAll = false; doResetAll(); });
     yes.setAttribute('id', 'reset-all-confirm');
     const no = button('ghost small', null, 'Cancel', () => { app.confirmAll = false; drawBar(); });
@@ -402,11 +475,11 @@ function drawBar() {
   } else {
     // The preset writes host-controlled options only, so a client has nothing it could change with it.
     if (!app.locked) {
-      const f = button('ghost small', 'i-fast', 'Fast', () => doPreset('fast'));
+      const f = button('ghost small', 'i-fast', 'Fast', () => { app.confirmFast = true; app.confirmAll = false; drawBar(); });
       f.setAttribute('id', 'preset-fast');
       end.appendChild(f);
     }
-    const b = button('ghost small', 'i-reset', 'Reset all', () => { app.confirmAll = true; drawBar(); });
+    const b = button('ghost small', 'i-reset', 'Reset all', () => { app.confirmAll = true; app.confirmFast = false; drawBar(); });
     b.setAttribute('id', 'reset-all');
     end.appendChild(b);
   }
@@ -449,7 +522,7 @@ function doResetAll() {
 // Writes the preset's values once; afterwards they are ordinary settings.
 function doPreset(name) {
   const r = call('preset', { name });
-  if (!r.ok) { say(r.msg || 'Something went wrong.'); return; }
+  if (!r.ok) { say(r.msg || 'Something went wrong.'); drawBar(); return; }
   say('');
   apply(r, null);
 }
