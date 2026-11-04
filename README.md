@@ -226,7 +226,7 @@ The host publishes its changed values in the Steam lobby data. Only values that 
 
 ## Compatibility
 
-Actually Working Employees replaces Harder Working Employees and does not run next to it. Remove `HarderWorkingEmployees.dll` from your `Mods` folder. If both are loaded, the game log shows a warning.
+Actually Working Employees is not compatible with Harder Working Employees. Remove `HarderWorkingEmployees.dll` from your `Mods` folder. If both are loaded, the game log shows a warning.
 
 ## Screenshots
 
