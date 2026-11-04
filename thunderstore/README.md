@@ -2,6 +2,8 @@
 
 > 🛟 **Need help or found a bug?** Get support at [support.doodesch.de/actuallyworkingemployees](https://support.doodesch.de/actuallyworkingemployees).
 
+[![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de)
+
 > Botanists, chemists, handlers and cleaners that stop mid-job, walk in circles or stand idle without a reason? This mod fixes them on the host and puts every employee setting in a phone app. Every setting starts at the vanilla value. Built on [S1API](https://github.com/ifBars/S1API) and [Sideload](https://thunderstore.io/c/schedule-i/p/DooDesch/Sideload/).
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
@@ -254,6 +256,12 @@ Install with a Thunderstore mod manager (r2modman or Gale) from the Schedule I c
 2. Install **S1API** and **Sideload** as their pages describe.
 3. Remove `HarderWorkingEmployees.dll` if it is in your `Mods` folder.
 4. Put **`ActuallyWorkingEmployees.dll`** into your Schedule I `Mods` folder.
+
+## Community
+
+[![DooDesch Mods on Discord](https://mods.doodesch.de/img/card.svg)](https://mods.doodesch.de)
+
+Join the DooDesch Mods Discord: update pings, polls on what comes next, and playtests of new mods.
 
 ## Credits
 
