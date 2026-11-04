@@ -34,6 +34,11 @@ function Shot([string]$name) {
 }
 function Settle { $t = (Get-Date).AddMilliseconds(1200); while ((Get-Date) -lt $t) { Start-Sleep -Milliseconds 200 } }
 
+# Sideload reads no per-side border colour or style; such a declaration is dropped and the old colour stays.
+$css = Get-Content (Join-Path $PSScriptRoot '..\Assets\app\app.css') -Raw
+$side = [regex]::Matches($css, 'border-(top|right|bottom|left)-(color|style)\s*:') | ForEach-Object Value
+Result (-not $side) 'css-no-per-side-border-colour' $(if ($side) { "found: $($side -join ', ')" } else { 'none' })
+
 $open = S1 run 'awe app open'
 Result ($open -match "app 'awe' opened") 'app-open' ($open.Split("`n")[-1])
 Settle
@@ -202,9 +207,15 @@ $typed = (Js "(function(){ var f=document.querySelector('#$crow .opt-field'); if
 Settle
 $cv = (S1 run "awe get $ck").Split("`n") | Where-Object { $_ -match '=' } | Select-Object -Last 1
 $note = (Js "document.getElementById('note').className + '|' + document.getElementById('note').textContent").Split("`n")[-1].Trim('"', ' ')
-Shot 'typed-below-min' | Out-Null
+$clampShot = Shot 'typed-below-min'
 Result ($help -match '^Range: 2-120\. ') 'range-in-help' "help='$help'"
 Result ($cv -match '= 2\b' -and $note -match '^note info\|Set to 2, the minimum\.$') 'typed-clamps-to-min' "typed=$typed value='$cv' note='$note'"
+# The green note must not show the red top line of the error note. One pixel column through the panel's lower part
+# (landscape phone, 1920x1080 shot) holds no reddish pixel.
+if ($clampShot) {
+    $red = (& python -I (Join-Path $PSScriptRoot 'red-line.py') $clampShot 900 600 760 2>&1 | Out-String).Trim()
+    Result ($red -match '^red=0 ') 'info-note-no-red-line' $red
+} else { Result $false 'info-note-no-red-line' 'no shot' }
 S1 run "awe reset $ck" | Out-Null
 
 # The Fast preset asks first: the first click shows the confirm pair, Cancel leaves every value alone.

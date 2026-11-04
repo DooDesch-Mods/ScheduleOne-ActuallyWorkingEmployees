@@ -105,7 +105,9 @@ body {
   color: var(--danger);
   font-size: 12px;
 }
-.note.info { background: var(--accent-soft); border-top-color: var(--accent-line); color: var(--accent); }
+/* The whole border-top is restated: Sideload reads no per-side colour (border-top-color), so the red top line of
+ * .note would stay under the green bar. */
+.note.info { background: var(--accent-soft); border-top: 1px solid var(--accent-line); color: var(--accent); }
 
 /* ---- layout ---------------------------------------------------------------------------------------------- */
 
