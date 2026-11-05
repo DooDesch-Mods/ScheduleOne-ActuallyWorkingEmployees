@@ -4,6 +4,12 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.0.1] - 2026-11-05
+
+### Fixed
+- Employees teleported after endless partial walks no longer land on the roof above their target. They land on its
+  floor, and one already on a roof comes back down.
+
 ## [1.0.0] - 2026-11-04
 
 First public release. Not compatible with Harder Working Employees: remove `HarderWorkingEmployees.dll` from your Mods folder.
