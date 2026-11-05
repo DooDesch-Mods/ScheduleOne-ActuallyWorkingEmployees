@@ -35,7 +35,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         public void Init()
         {
 #if DEBUG
-            DevConsole.Register("standstill", "awe standstill [warp|partial|freeze|thaw]  (state of every employee / force the fix / pin a walking employee in place)", Dev);
+            DevConsole.Register("standstill", "awe standstill [warp|partial|freeze|thaw|probe x y z|put x y z]  (state of every employee / force the fix / pin a walking employee in place / where a warp to a point lands / move the working employee to a point)", Dev);
 #endif
         }
 
@@ -134,16 +134,44 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             s.Since = Time.time;
         }
 
+        /// <summary>Largest height between a destination and the point a warp lands on. More is another floor or a roof.</summary>
+        private const float WarpMaxRise = 1.0f;
+        private static readonly float[] WarpSearch = { 0.5f, 1f, 2f, 3f, 4f, 5f };
+
         /// <summary>
-        /// Moves the employee to the NavMesh point nearest <paramref name="dest"/> and logs one line. Without a NavMesh
-        /// point within 5 m the employee stays where it is and a warning says so.
+        /// The point on the employee's own NavMesh nearest <paramref name="dest"/> on the destination's floor. The search
+        /// grows in steps, so floor a little to the side wins over a roof straight above: a station's obstacle carves the
+        /// floor around its access point, and the next walkable surface within 5 m can be the roof of the room.
+        /// </summary>
+        internal static bool TryWarpTarget(Employee emp, Vector3 dest, out Vector3 target, out string refusal)
+        {
+            target = dest;
+            var agent = emp.GetComponentInChildren<UnityEngine.AI.NavMeshAgent>(true);
+            if (agent == null) { refusal = "it has no NavMesh agent"; return false; }
+            foreach (float radius in WarpSearch)
+            {
+                // A fresh filter per query: the interop struct wraps a boxed IL2CPP value that does not outlive a call.
+                var filter = new UnityEngine.AI.NavMeshQueryFilter { agentTypeID = agent.agentTypeID, areaMask = UnityEngine.AI.NavMesh.AllAreas };
+                if (!UnityEngine.AI.NavMesh.SamplePosition(dest, out UnityEngine.AI.NavMeshHit hit, radius, filter)) continue;
+                float rise = hit.position.y - dest.y;
+                if (Mathf.Abs(rise) <= WarpMaxRise) { target = hit.position; refusal = null; return true; }
+                refusal = "the nearest walkable floor lies " + rise.ToString("F1") + " m " + (rise > 0 ? "above" : "below") + " it, on another floor";
+                return false;
+            }
+            refusal = "no NavMesh within 5 m of it";
+            return false;
+        }
+
+        /// <summary>
+        /// Moves the employee to the NavMesh point nearest <paramref name="dest"/> on the destination's floor and logs one
+        /// line. Without such a point within 5 m the employee stays where it is and a warning says so.
         /// </summary>
         private static bool Warp(Employee emp, Vector3 dest, string why, bool dev)
         {
-            if (!Rel.TryOnNavMesh(dest, out Vector3 target))
+            if (!TryWarpTarget(emp, dest, out Vector3 target, out string refusal))
             {
                 _refused++;
-                Core.Log?.Warning("[Fix1] did not warp " + Rel.Name(emp) + " (" + why + "): no NavMesh within 5 m of its destination " + dest + ".");
+                Core.Log?.Warning("[Fix1] did not warp " + Rel.Name(emp) + " (" + why + ") to its destination " + dest + ": " + refusal + ".");
                 return false;
             }
             Vector3 before = emp.transform.position;
@@ -208,16 +236,49 @@ namespace ActuallyWorkingEmployees.Features.Reliability
                 Core.Log?.Msg("[Dev] [Fix1] " + Rel.Name(emp) + ": behaviour=" + (a == null ? "none" : Rel.TypeName(a)) + " work=" + work
                     + " moving=" + emp.Movement.IsMoving + " distToDest=" + dist.ToString("F1")
                     + " stillFor=" + (s == null ? "0" : (Time.time - s.Since).ToString("F1")) + "s tries=" + (s == null ? 0 : s.Tries) + " partial=" + p
-                    + " pos=" + Pos(emp.transform.position));
+                    + " pos=" + Pos(emp.transform.position) + " dest=" + Pos(emp.Movement.CurrentDestination));
                 if (first == null && work && emp.Movement.CurrentDestination != Vector3.zero) first = emp;
             }
             Core.Log?.Msg("[Dev] [Fix1] " + new Fix1Standstill().Status);
             if (mode == "") return;
             if (mode == "freeze" || mode == "thaw") { DevFreeze(mode == "freeze"); return; }
+            if (mode == "probe") { DevProbe(args); return; }
             if (first == null) { Core.Log?.Warning("[Dev] awe standstill " + mode + ": no employee is on a work task with a destination."); return; }
-            if (mode == "warp") Warp(first, first.Movement.CurrentDestination, "dev command", true);
+            if (mode == "put")
+            {
+                if (!TryParsePoint(args, out Vector3 at)) { Core.Log?.Warning("[Dev] awe standstill put: needs x y z."); return; }
+                first.Movement.Warp(at);
+                Core.Log?.Msg("[Dev] [Fix1] put " + Rel.Name(first) + " at " + Pos(at) + ", now " + Pos(first.transform.position) + ", destination " + Pos(first.Movement.CurrentDestination));
+            }
+            else if (mode == "warp") Warp(first, first.Movement.CurrentDestination, "dev command", true);
             else if (mode == "partial") OnWalkResult(first.Behaviour.activeBehaviour, NPCMovement.WalkResult.Partial, true);
             else Core.Log?.Warning("[Dev] awe standstill: unknown mode '" + mode + "'.");
+        }
+
+        private static bool TryParsePoint(string[] args, out Vector3 p)
+        {
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            var st = System.Globalization.NumberStyles.Float;
+            p = Vector3.zero;
+            if (args.Length < 4 || !float.TryParse(args[1], st, ci, out float x) || !float.TryParse(args[2], st, ci, out float y)
+                || !float.TryParse(args[3], st, ci, out float z)) return false;
+            p = new Vector3(x, y, z);
+            return true;
+        }
+
+        /// <summary>
+        /// awe standstill probe x y z: where a warp to that point lands for the first employee, next to the nearest point of
+        /// any NavMesh within 5 m.
+        /// </summary>
+        private static void DevProbe(string[] args)
+        {
+            if (!TryParsePoint(args, out Vector3 p)) { Core.Log?.Warning("[Dev] awe standstill probe: needs x y z."); return; }
+            Employee emp = null;
+            foreach (Employee e in Rel.Employees()) { emp = e; break; }
+            if (emp == null) { Core.Log?.Warning("[Dev] awe standstill probe: no employee to probe with."); return; }
+            string any = Rel.TryOnNavMesh(p, out Vector3 near) ? Pos(near) : "none";
+            string warp = TryWarpTarget(emp, p, out Vector3 target, out string refusal) ? Pos(target) : "refused (" + refusal + ")";
+            Core.Log?.Msg("[Dev] [Fix1] probe " + Pos(p) + ": nearest any NavMesh " + any + ", warp lands " + warp + " (agent of " + Rel.Name(emp) + ")");
         }
 
         /// <summary>Position as "x,y,z" with two decimals in invariant culture, for the dev lines the tests parse.</summary>
