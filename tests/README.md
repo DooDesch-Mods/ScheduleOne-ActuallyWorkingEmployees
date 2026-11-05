@@ -74,6 +74,7 @@ takes a free-form body that returns `$null` or a reason. Replace a placeholder b
 |---|---|
 | `awe-prefs-persist.ps1 -Slot <slot> [-Build <name>]` | a changed option survives a restart while `MelonPreferences.cfg` cannot be saved (read-only, the state another mod's failed save leaves): AWE writes `UserData/ActuallyWorkingEmployees.cfg`, takes values over from the shared file on the first start, and the game is quit by closing its window so MelonLoader's quit save runs |
 | `awe-stuckwalk.ps1 -Slot <slot> [-Build <name>]` | a walk that never advances (`awe standstill freeze`: the agent keeps its path, `IsMoving` stays true) stays stuck with Fix 1 off and is stopped by Fix 1 on, after which the employee moves on |
+| `python -I awe-warpfloor.py --slot <slot>` | in the reporter's Sweatshop save (template `mrmonkey-dock`, with Based and MapExpansions): the old warp target of a floor spot under furniture is the roof, the new one stays on the floor, and an employee put on the roof is warped back down by Fix 1 |
 
 `-Build` takes a catalog name (main checkout) or the worktree folder name, not a full path.
 
