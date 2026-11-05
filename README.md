@@ -4,6 +4,8 @@
 
 [![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de)
 
+[![MLVScan ActuallyWorkingEmployees.dll](https://mlvscan.com/attestations/att_Y__LEFwWvdfXuRodsOXSgOkN/badge.svg)](https://mlvscan.com/attestations/att_Y__LEFwWvdfXuRodsOXSgOkN)
+
 > Botanists, chemists, handlers and cleaners that stop mid-job, walk in circles or stand idle without a reason? This mod fixes them on the host and puts every employee setting in a phone app. Every setting starts at the vanilla value. Built on [S1API](https://github.com/ifBars/S1API) and [Sideload](https://thunderstore.io/c/schedule-i/p/DooDesch/Sideload/).
 
 ![Version](https://img.shields.io/badge/version-1.0.1-blue)
@@ -13,8 +15,6 @@
 ![Sideload](https://img.shields.io/badge/Sideload-required-orange)
 ![Status](https://img.shields.io/badge/status-working-brightgreen)
 [![Polyfill](https://polyfill.doomods.com/badge/actually-working-employees.svg)](https://polyfill.doomods.com/mod/actually-working-employees)
-
-[![MLVScan ActuallyWorkingEmployees.dll](https://mlvscan.com/attestations/att_jbFHyIGR4gisRIdLqGpCtKQ3/badge.svg)](https://mlvscan.com/attestations/att_jbFHyIGR4gisRIdLqGpCtKQ3)
 
 ![Actually Working Employees](https://raw.githubusercontent.com/DooDesch-Mods/ScheduleOne-ActuallyWorkingEmployees/main/docs/img/header.jpg)
 
