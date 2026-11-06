@@ -14,6 +14,10 @@ namespace ActuallyWorkingEmployees.Config
             "Employees ignore furniture colliders", "Employees walk through furniture colliders on their path. Vanilla: off.",
             false, hostOnly: true, balance: false);
 
+        public static readonly BoolOption WorkThroughEndOfDay = new BoolOption("General", "WorkThroughEndOfDay",
+            "Work through 4 AM", "Employees keep working while the clock stands at 4 AM. Plants and station timers still wait until you sleep. Vanilla: off.",
+            false, hostOnly: true, balance: true);
+
         public static readonly BoolOption VerboseLogging = new BoolOption("General", "VerboseLogging",
             "Verbose log", "Writes detailed lines to the log: option changes and feature start-up.",
             false, hostOnly: false, balance: false);
