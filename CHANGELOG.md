@@ -4,6 +4,12 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.1.0] - 2026-11-06
+
+### Added
+- New setting "Work through 4 AM" (`WorkThroughEndOfDay`, off): employees keep working while the clock stands at 4 AM.
+  Plants and station timers still wait until you sleep.
+
 ## [1.0.1] - 2026-11-05
 
 ### Fixed
