@@ -59,6 +59,8 @@ namespace ActuallyWorkingEmployees.Host
             }
             foreach (Option o in Options.All)
             {
+                // The header switch of the app, not a row.
+                if (o == Options.AllowOutOfRange) continue;
                 if (!byGroup.TryGetValue(o.Group, out JArray arr))
                 {
                     Core.WarnOnce("app: group " + o.Group, "option " + o.Key + " is in a group the app does not list, skipped.");
@@ -81,6 +83,7 @@ namespace ActuallyWorkingEmployees.Host
                 ["role"] = Net.RoleText(),
                 ["locked"] = Net.IsClientOnly,
                 ["vanilla"] = Options.VanillaForced,
+                ["unlimited"] = Options.Unlimited,
             };
         }
 
@@ -104,6 +107,7 @@ namespace ActuallyWorkingEmployees.Host
                 ["waiting"] = !o.Editable && o.HostValueText == null,
                 ["hostOnly"] = o.HostOnly,
                 ["balance"] = o.Balance,
+                ["outside"] = o.IsOutside(value),
             };
             switch (o)
             {

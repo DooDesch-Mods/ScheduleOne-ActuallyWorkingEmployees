@@ -56,6 +56,16 @@ body {
 .bar-end { flex: none; flex-direction: row; align-items: center; gap: 6px; }
 .back { display: none; }
 
+/* "Allow values outside the limits": in the header in landscape, above the group list in portrait. Amber, not green,
+ * while on: it lifts a safety limit rather than changing one value. */
+.limits-bar { flex: none; flex-direction: row; align-items: center; }
+.limits { flex: none; flex-direction: row; align-items: center; gap: 8px; }
+.limits-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.limits.on .limits-label { color: var(--warn); }
+.switch.limits-switch.on { background: var(--warn); border-color: var(--warn); }
+.switch.limits-switch.on:hover { background: var(--warn); border-color: var(--warn); }
+.groups .limits { display: none; }
+
 /* ---- buttons --------------------------------------------------------------------------------------------- */
 
 .btn {
@@ -97,6 +107,7 @@ body {
   color: var(--warn);
   font-size: 12px;
 }
+.band.danger { background: var(--danger-soft); border-bottom: 1px solid var(--danger-line); color: var(--danger); }
 .note {
   flex: none;
   padding: 7px 14px;
@@ -225,6 +236,11 @@ body {
 .field:focus { border-color: var(--accent); }
 .row.changed .field { color: var(--accent); border-color: var(--accent-line); }
 .row.changed .field:focus { border-color: var(--accent); }
+/* A value outside the option's limits: amber field and help line, after the green of a changed row. */
+.row.outside .field { color: var(--warn); border-color: var(--warn-line); }
+.row.outside .field:focus { border-color: var(--warn); }
+.row.outside .help { color: var(--warn); }
+.row.outside .value.locked { color: var(--warn); }
 
 /* The switch: a squared track with the knob on the left (off) or the right (on). */
 .switch {
@@ -329,6 +345,17 @@ body {
   .group:hover { background: var(--s2); }
   .group.on { background: var(--s1); }
   .group .next { display: flex; }
+  .limits-bar { display: none; }
+  .groups .limits {
+    display: flex;
+    height: 48px;
+    padding: 0 10px 0 12px;
+    border-radius: 8px;
+    background: var(--s1);
+    border: 1px solid var(--line);
+  }
+  .groups .limits .limits-label { flex: 1; min-width: 0; font-size: 14px; color: var(--text); }
+  .groups .limits.on .limits-label { color: var(--warn); }
   .screen.on-list .pane { display: none; }
   .screen.on-pane .groups { display: none; }
   .screen.on-pane .back { display: flex; }

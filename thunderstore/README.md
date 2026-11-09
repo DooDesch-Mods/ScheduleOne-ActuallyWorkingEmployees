@@ -71,6 +71,7 @@ Section `[AWE_General]`. Switches that apply to the whole mod.
 | Key | Default | What it does |
 |---|---|---|
 | `UseVanillaBalance` | Off | Every balance setting acts as in the base game while on. Fixes stay active. |
+| `AllowOutOfRange` | Off | Number settings accept any value. Values outside the limits are untested. Each player unlocks only the settings they may change. |
 | `DisableEmployeeCollision` | Off | Employees no longer block each other while walking. |
 | `PlayersPassThroughEmployees` | Off | Players walk through employees. Set by the host, applies to every player. |
 | `DisableFurnitureCollision` | Off | Employees walk through furniture colliders on their path. |

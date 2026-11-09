@@ -6,6 +6,15 @@ namespace ActuallyWorkingEmployees.Config
             "Use vanilla balance", "Every balance setting acts as in the base game while on. Fixes stay active.",
             false, hostOnly: true, balance: false);
 
+        /// <summary>
+        /// Lifts the min and max of every number option on this machine. Not host-only: each machine unlocks the options it
+        /// may edit, so a client never unlocks the host's settings. The settings app shows it as the switch in its header,
+        /// not as a row of the General group.
+        /// </summary>
+        public static readonly BoolOption AllowOutOfRange = new BoolOption("General", "AllowOutOfRange",
+            "Allow values outside the limits", "Number settings accept any value. Values outside the limits are untested.",
+            false, hostOnly: false, balance: false);
+
         public static readonly BoolOption DisableEmployeeCollision = new BoolOption("General", "DisableEmployeeCollision",
             "Employees pass through each other", "Employees no longer block each other while walking. Vanilla: off.",
             false, hostOnly: true, balance: false);

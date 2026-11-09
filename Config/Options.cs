@@ -43,6 +43,19 @@ namespace ActuallyWorkingEmployees.Config
         /// <summary>True while <c>general.usevanillabalance</c> is on: balance options report their defaults.</summary>
         public static bool VanillaForced => _vanillaBalance != null && _vanillaBalance.Stored;
 
+        /// <summary>True while <c>general.allowoutofrange</c> is on: number options accept values outside min and max.</summary>
+        public static bool Unlimited => _initialized && AllowOutOfRange.Stored;
+
+        // Turning the switch off clamps every stored value outside the limits again, turning it on releases them; either
+        // way the effective value of those options changes, so their listeners (balance sync, the app) hear about it.
+        private static void OnUnlimitedChanged(Option _)
+        {
+            var outside = _all.Where(o => o.IsOutside(o.RawText)).ToList();
+            Core.Log?.Msg("[Options] values outside the limits " + (Unlimited ? "allowed" : "not allowed") + "; "
+                + outside.Count + " option(s) outside" + (outside.Count > 0 ? ": " + string.Join(", ", outside.Select(o => o.Key + "=" + o.RawText)) : "") + ".");
+            foreach (Option o in outside) o.NotifyChanged();
+        }
+
         /// <summary>Options in one group, in declaration order.</summary>
         public static IEnumerable<Option> InGroup(string group)
             => _all.Where(o => string.Equals(o.Group, group, StringComparison.OrdinalIgnoreCase));
@@ -104,6 +117,8 @@ namespace ActuallyWorkingEmployees.Config
             catch (Exception e) { Core.Failed("options: move categories to " + OptionsFile.FileName, e); }
             _vanillaBalance = Find("general.usevanillabalance") as BoolOption;
             if (_vanillaBalance == null) Core.Log?.Warning("[Options] general.usevanillabalance is missing; balance options use their stored values.");
+            AllowOutOfRange.Changed += OnUnlimitedChanged;
+            if (Unlimited) Core.Log?.Msg("[Options] values outside the limits are allowed.");
 
             Core.Log?.Msg("[Options] " + _all.Count + " options in " + categories.Count + " groups, "
                 + _all.Count(o => !o.IsDefault) + " changed from default.");

@@ -23,6 +23,8 @@ const app = {
   group: 0,
   confirmAll: false,
   confirmFast: false,
+  unlimited: false, // number options accept values outside their limits on this machine
+  confirmLimits: false,
   notice: '',       // the host-controlled text shown on a client, empty when it is off
   hints: {},        // group name -> hint text shown above that group's options
 };
@@ -82,12 +84,14 @@ function isNumber(o) { return o.kind === 'int' || o.kind === 'float'; }
 
 function round(v) { return Math.round(v * 1000) / 1000; }
 
-// The value one step up or down. A vanilla option sits at -1, one step below its minimum.
+// The value one step up or down. A vanilla option sits at -1, one step below its minimum. While values outside the
+// limits are allowed, a step goes past min and max; an option with a vanilla value goes from 0 to -1, never lower.
 function stepped(o, dir) {
   const cur = parseFloat(o.value);
   const step = o.step || 1;
   if (o.sentinel && cur === -1) return dir > 0 ? o.min : -1;
   let next = round(cur + dir * step);
+  if (app.unlimited) return o.sentinel && next < 0 ? -1 : next;
   if (next < o.min) next = o.sentinel ? -1 : o.min;
   if (next > o.max) next = o.max;
   return next;
@@ -96,6 +100,7 @@ function stepped(o, dir) {
 // True when a step in that direction would not change the value, so its button is shown as disabled.
 function atLimit(o, dir) {
   const cur = parseFloat(o.value);
+  if (app.unlimited) return dir < 0 && o.sentinel && cur === -1;
   if (dir < 0) return o.sentinel ? cur === -1 : cur <= o.min;
   return cur >= o.max;
 }
@@ -104,14 +109,18 @@ function atLimit(o, dir) {
 function fieldText(o) { return o.sentinel && parseFloat(o.value) === -1 ? String(o.text) : String(o.value); }
 
 // The allowed range, shown in the help line so nobody has to find it by typing a wrong number.
-function rangeText(o) { return 'Range: ' + o.min + '-' + o.max + '.'; }
+function rangeText(o) {
+  if (o.outside) return 'Outside the limits ' + o.min + '-' + o.max + '.';
+  return (app.unlimited ? 'Limits: ' : 'Range: ') + o.min + '-' + o.max + '.';
+}
 
 // A typed number outside the range is set to the nearest limit, with a note naming it. Text that is no number goes
 // to the host unchanged, which answers with its own error. "Vanilla" means -1 where the option has that value.
+// While values outside the limits are allowed, a number goes to the host as typed.
 function clampTyped(o, v) {
   if (o.sentinel && v.toLowerCase() === String(o.text).toLowerCase()) return { value: '-1', note: '' };
   const n = parseFloat(v);
-  if (isNaN(n) || (o.sentinel && n === -1)) return { value: v, note: '' };
+  if (isNaN(n) || (o.sentinel && n === -1) || app.unlimited) return { value: v, note: '' };
   if (n < o.min) return { value: String(o.min), note: 'Set to ' + o.min + ', the minimum.' };
   if (n > o.max) return { value: String(o.max), note: 'Set to ' + o.max + ', the maximum.' };
   return { value: v, note: '' };
@@ -217,7 +226,7 @@ function controls(o, rowNode) {
 
 function buildRow(o) {
   const changed = !o.isDefault && o.editable;
-  const row = el('div', 'row kind-' + o.kind + (changed ? ' changed' : '') + (app.vanilla && o.balance ? ' dim' : ''));
+  const row = el('div', 'row kind-' + o.kind + (changed ? ' changed' : '') + (o.outside ? ' outside' : '') + (app.vanilla && o.balance ? ' dim' : ''));
   row.setAttribute('id', rowId(o));
   const text = el('div', 'text');
   // The default sits on the label line and is always laid out, invisible at the default value: the label wraps the
@@ -228,7 +237,7 @@ function buildRow(o) {
   text.appendChild(head);
   // The range leads the help line: at its end the text breaks after the hyphen ("1-" / "32"), and Latin-1 has no
   // non-breaking hyphen.
-  const help = isNumber(o) && o.editable ? rangeText(o) + (o.help ? ' ' + o.help : '') : o.help;
+  const help = isNumber(o) && (o.editable || o.outside) ? rangeText(o) + (o.help ? ' ' + o.help : '') : o.help;
   if (help) text.appendChild(el('div', 'help', help));
   row.appendChild(text);
 
@@ -256,6 +265,7 @@ function groupIcon(name) {
 function drawGroups() {
   const nav = $('groups');
   nav.replaceChildren();
+  nav.appendChild(limitsControl('limits-top'));
   app.groups.forEach((g, i) => {
     const b = el('div', 'group' + (i === app.group ? ' on' : ''));
     b.setAttribute('id', 'group-' + String(g.name).toLowerCase());
@@ -455,12 +465,54 @@ function renderDiag(answer) {
   box.appendChild(analyticsCard(d));
 }
 
+// ---- values outside the limits -------------------------------------------------------------------------------------
+
+const LIMITS_KEY = 'general.allowoutofrange';
+
+// The switch with its label. It sits in the header in landscape and above the group list in portrait, where the
+// header has no room for the label; CSS shows one of the two.
+function limitsControl(id) {
+  const box = el('div', 'limits' + (app.unlimited ? ' on' : ''));
+  box.setAttribute('id', id);
+  box.appendChild(el('div', 'limits-label', 'Allow values outside the limits'));
+  const sw = el('button', 'switch limits-switch' + (app.unlimited ? ' on' : ''));
+  sw.appendChild(el('div', 'knob'));
+  sw.addEventListener('click', () => {
+    if (app.unlimited) { setLimits(false); return; }
+    app.confirmLimits = true;
+    app.confirmAll = false;
+    app.confirmFast = false;
+    drawBar();
+    drawBand();
+  });
+  box.appendChild(sw);
+  return box;
+}
+
+function setLimits(on) {
+  app.confirmLimits = false;
+  const r = call('set', { key: LIMITS_KEY, value: on ? 'true' : 'false' });
+  if (!r.ok) { say(r.msg || 'Something went wrong.'); drawBar(); drawBand(); return; }
+  say('');
+  refresh(true);
+}
+
 function drawBar() {
   $('role').textContent = app.role === 'client' ? 'Client' : app.role === 'host' ? 'Host' : '';
+  const slot = $('limits-bar');
+  slot.replaceChildren();
+  slot.appendChild(limitsControl('limits'));
   const end = $('bar-end');
   end.replaceChildren();
   // A client resets its own local options; the host's values stay as they are.
-  if (app.confirmFast) {
+  if (app.confirmLimits) {
+    const yes = button('danger small', null, 'Allow', () => setLimits(true));
+    yes.setAttribute('id', 'limits-confirm');
+    const no = button('ghost small', null, 'Cancel', () => { app.confirmLimits = false; drawBar(); drawBand(); });
+    no.setAttribute('id', 'limits-cancel');
+    end.appendChild(yes);
+    end.appendChild(no);
+  } else if (app.confirmFast) {
     const yes = button('small', 'i-fast', 'Apply fast preset?', () => { app.confirmFast = false; doPreset('fast'); });
     yes.setAttribute('id', 'preset-fast-confirm');
     const no = button('ghost small', null, 'Cancel', () => { app.confirmFast = false; drawBar(); });
@@ -477,11 +529,11 @@ function drawBar() {
   } else {
     // The preset writes host-controlled options only, so a client has nothing it could change with it.
     if (!app.locked) {
-      const f = button('ghost small', 'i-fast', 'Fast', () => { app.confirmFast = true; app.confirmAll = false; drawBar(); });
+      const f = button('ghost small', 'i-fast', 'Fast', () => { app.confirmFast = true; app.confirmAll = false; app.confirmLimits = false; drawBar(); drawBand(); });
       f.setAttribute('id', 'preset-fast');
       end.appendChild(f);
     }
-    const b = button('ghost small', 'i-reset', 'Reset all', () => { app.confirmAll = true; app.confirmFast = false; drawBar(); });
+    const b = button('ghost small', 'i-reset', 'Reset all', () => { app.confirmAll = true; app.confirmFast = false; app.confirmLimits = false; drawBar(); drawBand(); });
     b.setAttribute('id', 'reset-all');
     end.appendChild(b);
   }
@@ -490,11 +542,17 @@ function drawBar() {
 function drawBand() {
   const band = $('band');
   let msg = '';
-  if (app.locked) msg = app.notice;
+  let danger = false;
+  if (app.confirmLimits) {
+    msg = 'Values outside the limits are untested. They can stall employees, break stations or slow the game.';
+    danger = true;
+  }
+  else if (app.locked) msg = app.notice || (app.unlimited ? 'Values outside the limits are allowed for your own settings.' : '');
   else if (app.vanilla) msg = 'Vanilla balance is on.';
+  else if (app.unlimited) msg = 'Values outside the limits are allowed.';
   if (!msg) { band.className = 'band hidden'; return; }
   $('band-text').textContent = msg;
-  band.className = 'band';
+  band.className = danger ? 'band danger' : 'band';
 }
 
 function drawAll() {
@@ -535,6 +593,7 @@ function apply(state, raw) {
   app.groups = state.groups || [];
   app.locked = !!state.locked;
   app.vanilla = !!state.vanilla;
+  app.unlimited = !!state.unlimited;
   app.role = state.role || '';
   app.notice = state.notice || '';
   app.hints = state.hints || {};
