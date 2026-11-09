@@ -52,6 +52,7 @@ namespace ActuallyWorkingEmployees.Features.Packaging
         {
 #if DEBUG
             DevConsole.Register("batch", "awe batch  (every packager route: ready load, threshold and the decision)", Dev);
+            DevConsole.Register("routeui", "awe routeui [routes|count|delete <row>|top|bottom|close]  (give the first packager this many routes, open its panel, count the route rows; delete presses a row's delete button; top/bottom scroll the list)", DevRouteUi);
 #endif
         }
 
@@ -338,6 +339,148 @@ namespace ActuallyWorkingEmployees.Features.Packaging
         }
 
 #if DEBUG
+        private static void DevRouteUi(string[] args)
+        {
+            if (!DevConsole.RequireHost("routeui")) return;
+            var clip = Il2CppScheduleOne.DevUtilities.Singleton<Il2CppScheduleOne.Tools.ManagementClipboard>.Instance;
+            if (clip == null) { Core.Log?.Warning("[Dev] [RouteUi] no ManagementClipboard."); return; }
+            if (args.Length > 0 && string.Equals(args[0], "count", StringComparison.OrdinalIgnoreCase)) { DevRouteRows(null); return; }
+            if (args.Length > 1 && string.Equals(args[0], "delete", StringComparison.OrdinalIgnoreCase) && int.TryParse(args[1], out int nth))
+            {
+                DevRouteDelete(nth);
+                return;
+            }
+            if (args.Length > 0 && (string.Equals(args[0], "top", StringComparison.OrdinalIgnoreCase) || string.Equals(args[0], "bottom", StringComparison.OrdinalIgnoreCase)))
+            {
+                bool top = string.Equals(args[0], "top", StringComparison.OrdinalIgnoreCase);
+                var panels = UnityEngine.Resources.FindObjectsOfTypeAll<Il2CppScheduleOne.UI.Management.RouteListFieldUI>();
+                int moved = 0;
+                for (int k = 0; k < panels.Length; k++)
+                {
+                    var s = panels[k] != null && panels[k].gameObject.activeInHierarchy ? RouteListScroll.Of(panels[k]) : null;
+                    if (s == null) continue;
+                    s.verticalNormalizedPosition = top ? 1f : 0f;
+                    moved++;
+                }
+                if (moved == 0) Core.Log?.Warning("[Dev] [RouteUi] " + args[0] + ": no open route list with a scroll view.");
+                DevRouteRows(null);
+                return;
+            }
+            if (args.Length > 0 && string.Equals(args[0], "close", StringComparison.OrdinalIgnoreCase))
+            {
+                if (clip.IsOpen) clip.Close();
+                Core.Log?.Msg("[Dev] [RouteUi] closed.");
+                return;
+            }
+            Packager p = null;
+            foreach (Employee emp in Rel.Employees()) { p = emp.TryCast<Packager>(); if (p != null) break; }
+            if (p == null || p.configuration?.Routes == null) { Core.Log?.Warning("[Dev] [RouteUi] no packager with a route list. Hire one: addemployee packager <property>."); return; }
+            RouteListField field = p.configuration.Routes;
+            if (args.Length > 0 && int.TryParse(args[0], out int want))
+            {
+                int guard = 0;
+                while (field.Routes.Count < want && guard++ < 64)
+                {
+                    int before = field.Routes.Count;
+                    field.AddItem(new AdvancedTransitRoute(null, null));
+                    if (field.Routes.Count == before) break;
+                }
+            }
+            var list = new Il2CppSystem.Collections.Generic.List<Il2CppScheduleOne.Management.IConfigurable>();
+            list.Add(new Il2CppScheduleOne.Management.IConfigurable(p.Pointer));
+            if (clip.IsOpen) clip.Close();
+            clip.Open(list, null);
+            DevRouteRows(field);
+        }
+
+        /// <summary>
+        /// Presses the delete button of the nth row (1-based) of the open route list panel, the way a click does: through
+        /// the button's onDeleteClicked event, which RouteListFieldUI.Start or RouteListRows wired.
+        /// </summary>
+        private static void DevRouteDelete(int nth)
+        {
+            var panels = UnityEngine.Resources.FindObjectsOfTypeAll<Il2CppScheduleOne.UI.Management.RouteListFieldUI>();
+            for (int k = 0; k < panels.Length; k++)
+            {
+                var panel = panels[k];
+                if (panel == null || !panel.gameObject.scene.IsValid() || !panel.gameObject.activeInHierarchy) continue;
+                var rows = panel.RouteEntries;
+                if (nth < 1 || nth > rows.Length) { Core.Log?.Warning("[Dev] [RouteUi] delete: row " + nth + " of " + rows.Length + " does not exist."); return; }
+                RouteListField f = panel.Fields != null && panel.Fields.Count > 0 ? panel.Fields[0] : null;
+                int before = f != null ? f.Routes.Count : -1;
+                rows[nth - 1].onDeleteClicked.Invoke();
+                int after = f != null ? f.Routes.Count : -1;
+                Core.Log?.Msg("[Dev] [RouteUi] delete row " + nth + ": routes " + before + " -> " + after + ".");
+                DevRouteRows(f);
+                return;
+            }
+            Core.Log?.Warning("[Dev] [RouteUi] delete: no open route list panel.");
+        }
+
+        /// <summary>
+        /// The scroll state of a panel: viewport and content height, scroll position (1 top, 0 bottom) and whether the Add
+        /// button lies fully inside the viewport (addin), measured after a layout pass.
+        /// </summary>
+        private static string ScrollText(Il2CppScheduleOne.UI.Management.RouteListFieldUI panel)
+        {
+            var scroll = RouteListScroll.Of(panel);
+            if (scroll == null) return " scroll=0";
+            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(scroll.content);
+            Canvas.ForceUpdateCanvases();
+            RectTransform view = scroll.viewport;
+            Rect vr = view.rect;
+            int addIn = -1;
+            if (panel.AddButton != null && panel.AddButton.gameObject.activeInHierarchy)
+                addIn = Inside(view, vr, panel.AddButton.GetComponent<RectTransform>()) ? 1 : 0;
+            // First and last active row (1-based) that lie fully inside the viewport.
+            int first = 0, last = 0;
+            var rows = panel.RouteEntries;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                if (rows[i] == null || !rows[i].gameObject.activeSelf) continue;
+                if (!Inside(view, vr, rows[i].GetComponent<RectTransform>())) continue;
+                if (first == 0) first = i + 1;
+                last = i + 1;
+            }
+            return " scroll=1 view=" + vr.height.ToString("0") + " content=" + scroll.content.rect.height.ToString("0")
+                + " pos=" + scroll.verticalNormalizedPosition.ToString("0.00") + " y=" + scroll.content.anchoredPosition.y.ToString("0")
+                + " first=" + first + " last=" + last + " addin=" + addIn;
+        }
+
+        /// <summary>
+        /// True when <paramref name="item"/> lies vertically inside the viewport rect, compared in the viewport's own units:
+        /// the clipboard is a world-space canvas, where a world unit spans hundreds of UI pixels.
+        /// </summary>
+        private static bool Inside(RectTransform view, Rect vr, RectTransform item)
+        {
+            Rect r = item.rect;
+            float bottom = view.InverseTransformPoint(item.TransformPoint(new Vector3(0f, r.yMin, 0f))).y;
+            float top = view.InverseTransformPoint(item.TransformPoint(new Vector3(0f, r.yMax, 0f))).y;
+            return bottom >= vr.yMin - 0.5f && top <= vr.yMax + 0.5f;
+        }
+
+        /// <summary>Counts the rows of every route list panel in the scene. Rows shown = active row objects.</summary>
+        private static void DevRouteRows(RouteListField field)
+        {
+            var panels = UnityEngine.Resources.FindObjectsOfTypeAll<Il2CppScheduleOne.UI.Management.RouteListFieldUI>();
+            int found = 0;
+            for (int k = 0; k < panels.Length; k++)
+            {
+                var panel = panels[k];
+                if (panel == null || !panel.gameObject.scene.IsValid()) continue;
+                found++;
+                var rows = panel.RouteEntries;
+                int shown = 0;
+                for (int i = 0; i < rows.Length; i++) if (rows[i] != null && rows[i].gameObject.activeSelf) shown++;
+                RouteListField f = field ?? (panel.Fields != null && panel.Fields.Count > 0 ? panel.Fields[0] : null);
+                Core.Log?.Msg("[Dev] [RouteUi] panel " + panel.name + " active=" + panel.gameObject.activeInHierarchy
+                    + ": routes=" + (f != null ? f.Routes.Count : -1) + " max=" + (f != null ? f.MaxRoutes : -1) + " rows=" + rows.Length
+                    + " shown=" + shown + " add=" + (panel.AddButton != null && panel.AddButton.gameObject.activeSelf ? 1 : 0)
+                    + ScrollText(panel));
+            }
+            if (found == 0) Core.Log?.Warning("[Dev] [RouteUi] no route list panel in the scene.");
+        }
+
         private static void Dev(string[] args)
         {
             if (!DevConsole.RequireHost("batch")) return;
