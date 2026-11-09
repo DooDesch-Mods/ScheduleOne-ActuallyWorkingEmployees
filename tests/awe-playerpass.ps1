@@ -7,7 +7,7 @@ Needs a Debug build of AWE and a save with a hired employee (template 'played').
 player 1.5 m in front of the nearest employee and moves its CharacterController 3 m through it.
   off-blocked    option off: the walk stops at the employee (through=False)
   on-pairs       option on: ignore pairs are set for at least one employee
-  on-through     option on: the walk ends past the employee (through=True)
+  on-through     option on: the walk ends past the employee, or past it at a wall or object behind it (through=True)
   off-restored   option off again: the pairs are reset and the walk is blocked again
 Resets the option at the end. Prints PASS or FAIL per check and a SUMMARY line.
 #>

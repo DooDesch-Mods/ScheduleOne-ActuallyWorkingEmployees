@@ -159,7 +159,7 @@ namespace ActuallyWorkingEmployees.Features.World
         /// <summary>
         /// Puts the local player 1.5 m in front of the nearest standing employee and moves its CharacterController 3 m
         /// straight through the employee's position in small steps, all in one frame, the way PlayerMovement.Move does.
-        /// "through" = the player ended more than 1 m past the employee.
+        /// "through" = the player ended more than 1 m past the employee, or past it and stopped by something that is no employee.
         /// </summary>
         private static void DevWalk()
         {
@@ -189,8 +189,29 @@ namespace ActuallyWorkingEmployees.Features.World
             Vector3 end = cc.transform.position;
             float past = Vector3.Dot(end - emp, -dir);
             bool trigger = target.Movement._capsuleCollider.isTrigger;
+            // What stopped the walk early: an employee collider means the pair was not ignored, anything else (a wall or
+            // furniture behind the employee) means the player got through the employee and hit the room.
+            string blocker = "none";
+            bool blockerIsEmployee = false;
+            if (past < 1f)
+            {
+                Vector3 c = end + cc.center;
+                float half = Mathf.Max(0f, cc.height / 2f - cc.radius);
+                var hits = Physics.CapsuleCastAll(c + Vector3.up * half, c - Vector3.up * half, cc.radius * 0.95f, -dir, 0.3f, ~0, QueryTriggerInteraction.Ignore);
+                float nearest = float.MaxValue;
+                foreach (var h in hits)
+                {
+                    if (h.collider == null || h.collider == (Collider)cc || h.distance >= nearest) continue;
+                    if (h.collider.transform.IsChildOf(player.transform)) continue;
+                    nearest = h.distance;
+                    blocker = h.collider.name;
+                    blockerIsEmployee = h.collider.GetComponentInParent<Employee>() != null;
+                }
+            }
+            bool through = past > 1f || (past > 0.3f && blocker != "none" && !blockerIsEmployee);
             Core.Log?.Msg("[Dev] [PlayerPass] walk " + Rel.Name(target) + ": moved " + (end - start).magnitude.ToString("0.00") + " m, past=" + past.ToString("0.00")
-                + " through=" + (past > 1f) + " option=" + On + " capsuleTrigger=" + trigger);
+                + " blocker=" + blocker + " blockerEmployee=" + blockerIsEmployee
+                + " through=" + through + " option=" + On + " capsuleTrigger=" + trigger);
         }
 #endif
     }
