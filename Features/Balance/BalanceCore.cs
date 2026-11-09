@@ -67,6 +67,9 @@ namespace ActuallyWorkingEmployees.Features.Balance
 
         internal static int Of(UnityEngine.Object owner, VSlot slot, int live) => (int)Of(owner, slot, (float)live);
 
+        /// <summary>Replaces the remembered value, for a field another mod changed on purpose.</summary>
+        internal static void Set(UnityEngine.Object owner, VSlot slot, float value) { _values[new Key(owner.GetInstanceID(), slot)] = value; }
+
         /// <summary>The value of a prefab, captured on first sight and kept across saves. Call before the prefab is first written.</summary>
         internal static float OfPrefab(UnityEngine.Object prefab, VSlot slot, float live)
         {
