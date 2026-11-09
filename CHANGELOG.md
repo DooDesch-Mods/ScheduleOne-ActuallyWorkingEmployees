@@ -4,6 +4,20 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.2.0] - 2026-11-09
+
+### Added
+
+- New host setting "Players pass through employees": players walk through employees, for every player in the lobby.
+- "Allow values outside the limits" switch in the settings app: number settings can go beyond their range after a
+  warning.
+
+### Fixed
+
+- Handlers show every route up to Max routes. The route list scrolls once it has more than five.
+- The employee capacity setting no longer warns about the Sweatshop from Based, and returns to Based's capacity when
+  the override is off.
+
 ## [1.1.0] - 2026-11-06
 
 ### Added
