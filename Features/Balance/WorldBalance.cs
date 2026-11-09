@@ -224,6 +224,8 @@ namespace ActuallyWorkingEmployees.Features.Balance
     {
         public override string Name => "bal-property";
         private int _properties;
+        // Capacity this feature wrote, per property instance. A live value that differs was set by someone else.
+        private static readonly Dictionary<int, int> _written = new Dictionary<int, int>();
 
         protected override IEnumerable<Option> Watched => new Option[] { Options.EnableEmployeeCapacityOverride, Options.EmployeeCapacity, Options.EmployeeCapacityLossGuard };
 
@@ -236,7 +238,39 @@ namespace ActuallyWorkingEmployees.Features.Balance
             });
             Eff.Add(Options.EnableEmployeeCapacityOverride, () => Options.EnableEmployeeCapacityOverride.Value ? "on" : "off");
             Eff.Add(Options.EmployeeCapacityLossGuard, () => Options.EmployeeCapacityLossGuard.Value ? "on" : "off");
+#if DEBUG
+            ActuallyWorkingEmployees.Debugging.DevConsole.Register("capacity", "awe capacity [property] [n]  (capacity, employees and remembered vanilla capacity per property; with a property and n, sets its capacity the way another mod would)", DevCapacity);
+#endif
         }
+
+#if DEBUG
+        private static void DevCapacity(string[] args)
+        {
+            var list = Il2CppScheduleOne.Property.Property.Properties;
+            if (list == null) { Core.Log?.Warning("[Dev] [Capacity] Property.Properties is null."); return; }
+            if (args.Length > 1 && int.TryParse(args[1], out int n))
+            {
+                bool hit = false;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var p = list[i];
+                    if (p == null || p.name.IndexOf(args[0], StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    Core.Log?.Msg("[Dev] [Capacity] " + p.name + ": capacity " + p.EmployeeCapacity + " -> " + n + " (as another mod).");
+                    p.EmployeeCapacity = n;
+                    hit = true;
+                }
+                if (!hit) Core.Log?.Warning("[Dev] [Capacity] no property matches '" + args[0] + "'.");
+            }
+            for (int i = 0; i < list.Count; i++)
+            {
+                var p = list[i];
+                if (p == null) continue;
+                int live = p.EmployeeCapacity;
+                Core.Log?.Msg("[Dev] [Capacity] " + p.name + " capacity=" + live + " employees=" + (p.Employees != null ? p.Employees.Count : 0)
+                    + " vanilla=" + Vanilla.Of(p, VSlot.Capacity, live) + " overridden=" + (_written.ContainsKey(p.GetInstanceID()) ? 1 : 0));
+            }
+        }
+#endif
 
         protected override void Sync()
         {
@@ -253,12 +287,28 @@ namespace ActuallyWorkingEmployees.Features.Balance
             }
         }
 
+        /// <summary>
+        /// Capacity is shared with other mods: Based raises the limit of an expanded property after the save loaded, long
+        /// after the first sync read the game's value. So the remembered value follows every change this feature did not
+        /// make, and with the override off a capacity is only written back when this feature changed it.
+        /// </summary>
         private static void SyncProperty(Il2CppScheduleOne.Property.Property prop, bool active)
         {
             int live = prop.EmployeeCapacity;
+            int id = prop.GetInstanceID();
+            bool ours = _written.TryGetValue(id, out int wrote);
             int van = Vanilla.Of(prop, VSlot.Capacity, live);
+            if ((ours && live != wrote) || (!ours && live != van))
+            {
+                Core.Log?.Msg("[bal-property] " + prop.name + ": capacity is now " + live + ", set by the game or another mod. Turning the override off goes back to " + live + ".");
+                Vanilla.Set(prop, VSlot.Capacity, live);
+                van = live;
+                _written.Remove(id);
+                ours = false;
+            }
+            if (!active && !ours) return;
             int want = active ? Options.EmployeeCapacity.Value : van;
-            if (live == want) return;
+            if (live == want) { if (!active) _written.Remove(id); return; }
             int hired = prop.Employees != null ? prop.Employees.Count : 0;
             if (Options.EmployeeCapacityLossGuard.Value && want < hired)
             {
@@ -266,10 +316,13 @@ namespace ActuallyWorkingEmployees.Features.Balance
                 return;
             }
             prop.EmployeeCapacity = want;
+            if (active) _written[id] = want; else _written.Remove(id);
             Core.Log?.Msg("[bal-property] " + prop.name + ": capacity " + live + " -> " + want + ".");
         }
 
-        protected override string Details() => "properties=" + _properties;
+        protected override void OnReset() { _written.Clear(); }
+
+        protected override string Details() => "properties=" + _properties + " overridden=" + _written.Count;
     }
 
     /// <summary>
