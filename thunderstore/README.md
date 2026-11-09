@@ -12,7 +12,7 @@
 
 > Botanists, chemists, handlers and cleaners that stop mid-job, walk in circles or stand idle without a reason? This mod fixes them on the host and puts every employee setting in a phone app. Every setting starts at the vanilla value. Built on [S1API](https://github.com/ifBars/S1API) and [Sideload](https://thunderstore.io/c/schedule-i/p/DooDesch/Sideload/).
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Game](https://img.shields.io/badge/game-Schedule%20I-purple)
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.3+-green)
 ![S1API](https://img.shields.io/badge/S1API-required-orange)
