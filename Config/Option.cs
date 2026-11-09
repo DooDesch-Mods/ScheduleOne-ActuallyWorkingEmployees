@@ -52,6 +52,15 @@ namespace ActuallyWorkingEmployees.Config
         public abstract string DefaultText { get; }
         public abstract string ValueText { get; }
 
+        /// <summary>The stored value as text before any clamp; equal to <see cref="ValueText"/> except for number options.</summary>
+        public virtual string RawText => ValueText;
+
+        /// <summary>True when <paramref name="raw"/> is a number outside this option's min and max (the vanilla -1 excluded).</summary>
+        public virtual bool IsOutside(string raw) => false;
+
+        /// <summary>Raises <see cref="Changed"/> for a value that changed without a set, e.g. a limit that was lifted.</summary>
+        internal void NotifyChanged() => RaiseChanged();
+
         /// <summary>The host's value as text on a co-op client, otherwise null.</summary>
         public string HostValueText => Net.IsClientOnly ? _hostRaw : null;
 
@@ -202,6 +211,10 @@ namespace ActuallyWorkingEmployees.Config
 
         public override string DefaultText => I(Default);
         public override string ValueText => I(Stored);
+        public override string RawText => _entry != null ? I(_entry.Value) : DefaultText;
+
+        public override bool IsOutside(string raw)
+            => int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) && !Within(v);
 
         public override string Describe(string raw)
         {
@@ -219,11 +232,13 @@ namespace ActuallyWorkingEmployees.Config
             if (!InRange(v))
             { error = Key + ": " + I(v) + " is outside " + I(Min) + "-" + I(Max) + (VanillaSentinel ? " (or -1 for vanilla)" : "") + "."; return false; }
             if (_entry != null) _entry.Value = v;
+            if (!Within(v)) Core.Log?.Msg("[Options] " + Key + " = " + I(v) + " is outside " + I(Min) + "-" + I(Max) + ", allowed by general.allowoutofrange.");
             error = null;
             return true;
         }
 
-        private bool InRange(int v) => (VanillaSentinel && v == -1) || (v >= Min && v <= Max);
+        private bool Within(int v) => (VanillaSentinel && v == -1) || (v >= Min && v <= Max);
+        private bool InRange(int v) => Within(v) || Options.Unlimited;
     }
 
     public sealed class FloatOption : Option
@@ -264,6 +279,10 @@ namespace ActuallyWorkingEmployees.Config
 
         public override string DefaultText => F(Default);
         public override string ValueText => F(Stored);
+        public override string RawText => _entry != null ? F(_entry.Value) : DefaultText;
+
+        public override bool IsOutside(string raw)
+            => float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out float v) && Finite(v) && !Within(v);
 
         public override string Describe(string raw)
         {
@@ -278,14 +297,18 @@ namespace ActuallyWorkingEmployees.Config
         {
             if (!float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out float v))
             { error = Key + ": expected a number like 1.5, got '" + raw + "'."; return false; }
+            if (!Finite(v)) { error = Key + ": " + raw + " is not a usable number."; return false; }
             if (!InRange(v))
             { error = Key + ": " + F(v) + " is outside " + F(Min) + "-" + F(Max) + (VanillaSentinel ? " (or -1 for vanilla)" : "") + "."; return false; }
             if (_entry != null) _entry.Value = v;
+            if (!Within(v)) Core.Log?.Msg("[Options] " + Key + " = " + F(v) + " is outside " + F(Min) + "-" + F(Max) + ", allowed by general.allowoutofrange.");
             error = null;
             return true;
         }
 
-        private bool InRange(float v) => !float.IsNaN(v) && ((VanillaSentinel && v == -1f) || (v >= Min - 1e-4f && v <= Max + 1e-4f));
+        private static bool Finite(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
+        private bool Within(float v) => (VanillaSentinel && v == -1f) || (v >= Min - 1e-4f && v <= Max + 1e-4f);
+        private bool InRange(float v) => Finite(v) && (Within(v) || Options.Unlimited);
     }
 
     public sealed class ChoiceOption : Option

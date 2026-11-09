@@ -223,6 +223,21 @@ $rows.Add((New-Row 'opt-float' -Finally "awe reset $k" -Steps @(
     New-Step -Cmd "awe set $k -1" -Expect (Rx-OptAt $k 'Vanilla')
     Step-Reset $k 'Vanilla')))
 
+# general.allowoutofrange lifts the limits of every number option; turned off again, a stored value outside them is
+# read as the nearest limit and kept in the file.
+$rows.Add((New-Row 'opt-unlimited' -Finally 'awe reset botanist.maxpots', 'awe reset botanist.walkspeed', 'awe reset general.allowoutofrange' -Steps @(
+    Step-Reset 'general.allowoutofrange' 'Off'
+    Step-Reject 'botanist.maxpots' '40' 'outside 1-32'
+    Step-Set 'general.allowoutofrange' 'on' 'On' 'Off'
+    Step-Set 'botanist.maxpots' '40' '40' '8'
+    Step-Set 'botanist.maxpots' '0' '0' '8'
+    Step-Set 'botanist.walkspeed' '9' '9' 'Vanilla'
+    Step-Reject 'botanist.walkspeed' 'Infinity' 'not a usable number'
+    Step-Set 'botanist.maxpots' '40' '40' '8'
+    Step-Set 'general.allowoutofrange' 'off' 'Off' 'Off'
+    Step-Get 'botanist.maxpots' '32' '8'
+    Step-Reject 'botanist.maxpots' '41' 'outside 1-32')))
+
 $k = 'packager.routeprioritymode'
 $rows.Add((New-Row 'opt-choice' -Finally "awe reset $k" -Steps @(
     Step-Reset $k 'Vanilla'
