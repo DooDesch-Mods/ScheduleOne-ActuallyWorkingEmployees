@@ -72,6 +72,7 @@ Section `[AWE_General]`. Switches that apply to the whole mod.
 |---|---|---|
 | `UseVanillaBalance` | Off | Every balance setting acts as in the base game while on. Fixes stay active. |
 | `DisableEmployeeCollision` | Off | Employees no longer block each other while walking. |
+| `PlayersPassThroughEmployees` | Off | Players walk through employees. Set by the host, applies to every player. |
 | `DisableFurnitureCollision` | Off | Employees walk through furniture colliders on their path. |
 | `WorkThroughEndOfDay` | Off | Employees keep working while the clock stands at 4 AM. Plants and station timers still wait until you sleep. |
 | `VerboseLogging` | Off | Writes detailed lines to the log: option changes and feature start-up. |

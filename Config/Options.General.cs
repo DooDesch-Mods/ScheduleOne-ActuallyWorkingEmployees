@@ -10,6 +10,10 @@ namespace ActuallyWorkingEmployees.Config
             "Employees pass through each other", "Employees no longer block each other while walking. Vanilla: off.",
             false, hostOnly: true, balance: false);
 
+        public static readonly BoolOption PlayersPassThroughEmployees = new BoolOption("General", "PlayersPassThroughEmployees",
+            "Players pass through employees", "Players walk through employees. Set by the host, applies to every player. Vanilla: off.",
+            false, hostOnly: true, balance: false);
+
         public static readonly BoolOption DisableFurnitureCollision = new BoolOption("General", "DisableFurnitureCollision",
             "Employees ignore furniture colliders", "Employees walk through furniture colliders on their path. Vanilla: off.",
             false, hostOnly: true, balance: false);
