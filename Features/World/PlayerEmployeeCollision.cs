@@ -195,14 +195,15 @@ namespace ActuallyWorkingEmployees.Features.World
             bool blockerIsEmployee = false;
             if (past < 1f)
             {
+                // Rays from inside the player's capsule skip its own colliders. Physics.CapsuleCastAll is stripped from
+                // the IL2CPP build, Physics.Raycast is used by the game itself.
                 Vector3 c = end + cc.center;
                 float half = Mathf.Max(0f, cc.height / 2f - cc.radius);
-                var hits = Physics.CapsuleCastAll(c + Vector3.up * half, c - Vector3.up * half, cc.radius * 0.95f, -dir, 0.3f, ~0, QueryTriggerInteraction.Ignore);
                 float nearest = float.MaxValue;
-                foreach (var h in hits)
+                for (int k = -1; k <= 1; k++)
                 {
-                    if (h.collider == null || h.collider == (Collider)cc || h.distance >= nearest) continue;
-                    if (h.collider.transform.IsChildOf(player.transform)) continue;
+                    if (!Physics.Raycast(c + Vector3.up * (half * k), -dir, out RaycastHit h, cc.radius + 0.3f, ~0, QueryTriggerInteraction.Ignore)) continue;
+                    if (h.collider == null || h.distance >= nearest || h.collider.transform.IsChildOf(player.transform)) continue;
                     nearest = h.distance;
                     blocker = h.collider.name;
                     blockerIsEmployee = h.collider.GetComponentInParent<Employee>() != null;
