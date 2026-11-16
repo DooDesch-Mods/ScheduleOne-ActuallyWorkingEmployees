@@ -32,6 +32,11 @@ The exit code is the number of FAILs. Waits are on log lines, `/health` and `wai
 - `awe-coop.ps1` - host/client sync checks.
 - `awe-lib.ps1` - helpers: `Invoke-Awe` (s1.py run), log reads, bridge calls, background waits.
 - `awe_bridge.py` - bridge calls s1.py has no verb for (`health`, `save_now`, `return_to_menu`, `load_save`).
+- `awe-l10n-check.py` - static: every text of the code has a German entry in `Assets/l10n/de.json` (no English left, placeholders match, no stale key, Latin-1 only, no raw text in the page script). No game needed.
+- `awe-l10n-app.ps1` - shot set of the phone app in German and English (`awe app lang <code>` switches the running game), title, leftover-English, box-outside-parent and template-file checks. Needs a Debug build in a loaded save.
+- `l10n/extract.py` - collects every player-facing text with where it appears and the room it has; the input of the translation and of the check above.
+
+The app scripts (`awe-app-*.ps1`) switch the game to English first, because they read English texts from the page and the OS language may be German.
 
 ## Adding a check
 

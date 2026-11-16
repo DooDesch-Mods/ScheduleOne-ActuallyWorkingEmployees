@@ -20,6 +20,7 @@ namespace ActuallyWorkingEmployees.Host
         internal static readonly Dictionary<string, Func<JObject, JObject>> Handlers = new Dictionary<string, Func<JObject, JObject>>(StringComparer.Ordinal)
         {
             ["list"] = _ => BuildState(),
+            ["ui"] = _ => new JObject { ["ok"] = true, ["strings"] = Loc.PageStrings() },
             ["role"] = _ => Role(),
             ["set"] = Set,
             ["reset"] = Reset,
@@ -45,7 +46,8 @@ namespace ActuallyWorkingEmployees.Host
             }
         }
 
-        internal static JObject Fail(string msg) => new JObject { ["ok"] = false, ["msg"] = msg };
+        /// <summary>An error answer. <paramref name="msg"/> is the English text; the page gets it in the current language.</summary>
+        internal static JObject Fail(string msg) => new JObject { ["ok"] = false, ["msg"] = Loc.Text(msg) };
 
         internal static JObject BuildState()
         {
@@ -55,7 +57,7 @@ namespace ActuallyWorkingEmployees.Host
             {
                 var arr = new JArray();
                 byGroup[g] = arr;
-                groups.Add(new JObject { ["name"] = g, ["options"] = arr });
+                groups.Add(new JObject { ["name"] = g, ["label"] = Loc.Text(g), ["options"] = arr });
             }
             foreach (Option o in Options.All)
             {
@@ -94,13 +96,13 @@ namespace ActuallyWorkingEmployees.Host
             var j = new JObject
             {
                 ["key"] = o.Key,
-                ["label"] = o.Label,
-                ["help"] = o.Help,
+                ["label"] = Loc.Text(o.Label),
+                ["help"] = Loc.Text(o.Help),
                 ["kind"] = o.Kind.ToString().ToLowerInvariant(),
                 ["value"] = value,
-                ["text"] = text,
+                ["text"] = Loc.Text(text),
                 ["def"] = o.DefaultText,
-                ["defText"] = o.Describe(o.DefaultText),
+                ["defText"] = Loc.Text(o.Describe(o.DefaultText)),
                 ["isDefault"] = o.IsDefault,
                 ["editable"] = o.Editable,
                 // A client whose host values have not arrived yet: locked, but there is no host value to show.
@@ -119,6 +121,7 @@ namespace ActuallyWorkingEmployees.Host
                     break;
                 case ChoiceOption c:
                     j["choices"] = new JArray(c.Choices);
+                    j["choiceLabels"] = new JArray(Array.ConvertAll(c.Choices, Loc.Text));
                     break;
             }
             return j;

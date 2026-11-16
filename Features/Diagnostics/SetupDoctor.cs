@@ -349,6 +349,13 @@ namespace ActuallyWorkingEmployees.Features.Diagnostics
                 + Routes + " route(s), " + ReachTested + " path-tested, " + ElapsedMs + " ms";
         }
 
+        /// <summary>The summary in the current language, for the phone app; the log keeps <see cref="Summary"/>.</summary>
+        internal static string SummaryText()
+        {
+            return Host.Loc.Format("{0} finding(s), {1} shown, {2} propert(ies), {3} employee(s), {4} route(s), {5} path-tested, {6} ms",
+                Total, Shown, Properties, Employees, Routes, ReachTested, ElapsedMs);
+        }
+
         private static string Safe(Prop p) { return p == null ? "?" : p.PropertyName ?? "?"; }
         private static string EmpName(Employee e) { return e == null ? "?" : e.FullName ?? "?"; }
         private static string EntityName(ITransitEntity t) { return t?.Name ?? "?"; }

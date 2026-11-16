@@ -36,7 +36,7 @@ namespace ActuallyWorkingEmployees.Host
         {
             try
             {
-                _app = Apps.Register(AppId, Bundle, "Employees", "Employees");
+                _app = Apps.Register(AppId, Bundle, Loc.Text("Employees"), Loc.Text("Employees"));
                 _app.Orientation("landscape", "portrait");
                 foreach (var kv in Calls.Handlers)
                 {
@@ -54,7 +54,7 @@ namespace ActuallyWorkingEmployees.Host
                 return;
             }
 #if DEBUG
-            DevConsole.Register("app", "awe app <open|dump|diag|typing>", DevCommand);
+            DevConsole.Register("app", "awe app <open|dump|diag|typing|lang>", DevCommand);
 #endif
         }
 
@@ -122,7 +122,13 @@ namespace ActuallyWorkingEmployees.Host
                 Core.Log?.Msg("[Dev] awe app typing: IsTyping=" + Il2CppScheduleOne.GameInput.IsTyping
                     + ", page " + (_app.IsOpen ? "open" : "closed") + ".");
             }
-            else Core.Log?.Warning("[Dev] awe app <open|dump|diag|typing>");
+            else if (sub == "lang")
+            {
+                string code = args.Length > 1 ? args[1].ToLowerInvariant() : "";
+                if (code.Length == 0) { Core.Log?.Warning("[Dev] awe app lang <en|de|...>"); return; }
+                if (Loc.SetLanguage(code)) _dirty = true;
+            }
+            else Core.Log?.Warning("[Dev] awe app <open|dump|diag|typing|lang>");
         }
 #endif
     }

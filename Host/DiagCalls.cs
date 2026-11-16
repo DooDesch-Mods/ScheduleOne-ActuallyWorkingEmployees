@@ -24,14 +24,14 @@ namespace ActuallyWorkingEmployees.Host
         internal static JObject Hints()
         {
             var h = new JObject();
-            if (Options.ShowStationSpeedWarning.Value && StationSpeedChanged()) h["Stations"] = StationHint;
+            if (Options.ShowStationSpeedWarning.Value && StationSpeedChanged()) h["Stations"] = Loc.Text(StationHint);
             return h;
         }
 
         /// <summary>The text of the host-controlled band on a client, or empty.</summary>
         internal static string Notice()
         {
-            return Net.IsClientOnly && Options.ShowCoopLockNotice.Value ? LockNotice : "";
+            return Net.IsClientOnly && Options.ShowCoopLockNotice.Value ? Loc.Text(LockNotice) : "";
         }
 
         private static bool StationSpeedChanged()
@@ -87,8 +87,8 @@ namespace ActuallyWorkingEmployees.Host
                     if (b.HasProblem) problems++;
                     items.Add(new JObject
                     {
-                        ["name"] = b.Name, ["role"] = b.Role, ["sev"] = b.HasProblem ? Finding.SevText(b.Severity) : "ok",
-                        ["text"] = b.Text,
+                        ["name"] = b.Name, ["role"] = Loc.Text(b.Role), ["sev"] = b.HasProblem ? Finding.SevText(b.Severity) : "ok",
+                        ["text"] = Loc.Text(b.Text),
                     });
                 }
             }
@@ -106,8 +106,8 @@ namespace ActuallyWorkingEmployees.Host
                     Finding f = SetupDoctor.Findings[i];
                     items.Add(new JObject
                     {
-                        ["sev"] = Finding.SevText(f.Severity), ["cat"] = f.Category, ["subject"] = f.Subject,
-                        ["msg"] = f.Message, ["fix"] = f.Fix, ["count"] = f.Count,
+                        ["sev"] = Finding.SevText(f.Severity), ["cat"] = Loc.Text(f.Category), ["subject"] = f.Subject,
+                        ["msg"] = Loc.Text(f.Message), ["fix"] = Loc.Text(f.Fix), ["count"] = f.Count,
                     });
                 }
             }
@@ -117,7 +117,7 @@ namespace ActuallyWorkingEmployees.Host
                 ["ran"] = ran,
                 ["total"] = ran ? SetupDoctor.Total : 0,
                 ["shown"] = ran ? SetupDoctor.Shown : 0,
-                ["summary"] = ran ? SetupDoctor.Summary() : "",
+                ["summary"] = ran ? SetupDoctor.SummaryText() : "",
                 ["ageSec"] = ran ? (int)(UnityEngine.Time.realtimeSinceStartup - SetupDoctor.RanAt) : 0,
                 ["findings"] = items,
             };
@@ -133,10 +133,10 @@ namespace ActuallyWorkingEmployees.Host
                 {
                     var reasons = new JArray();
                     foreach (var kv in s.Reasons.OrderByDescending(r => r.Value).Take(MaxReasonsPerRow))
-                        reasons.Add(new JObject { ["text"] = kv.Key, ["count"] = kv.Value });
+                        reasons.Add(new JObject { ["text"] = Loc.Text(kv.Key), ["count"] = kv.Value });
                     items.Add(new JObject
                     {
-                        ["name"] = s.Name, ["role"] = s.Role, ["samples"] = s.Samples, ["idle"] = s.IdleSamples,
+                        ["name"] = s.Name, ["role"] = Loc.Text(s.Role), ["samples"] = s.Samples, ["idle"] = s.IdleSamples,
                         ["idlePct"] = s.Samples == 0 ? 0 : (int)Math.Round(100.0 * s.IdleSamples / s.Samples),
                         ["reasons"] = reasons,
                     });

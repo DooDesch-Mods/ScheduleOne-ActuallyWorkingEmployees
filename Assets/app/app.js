@@ -29,6 +29,36 @@ const app = {
   hints: {},        // group name -> hint text shown above that group's options
 };
 
+// ---- language ---------------------------------------------------------------------------------------------------
+
+// English text -> text in the player's language, filled in from the host's "ui" call. A text the host has no entry for
+// stays English, so a missing translation never leaves a blank.
+let STR = {};
+
+function loadStrings() {
+  const raw = callRaw('ui');
+  if (!raw) { console.error('[awe] ui answered nothing, the page stays English'); return; }
+  try {
+    const r = JSON.parse(raw);
+    STR = r && r.strings ? r.strings : {};
+  } catch (e) { console.error('[awe] ui answered something that is not JSON: ' + e.message); }
+}
+
+// t('Default: {0}', value): the translated template with {0}, {1}, ... replaced by the arguments.
+function t(en) {
+  let s = STR[en] || en;
+  for (let i = 1; i < arguments.length; i++) s = s.split('{' + (i - 1) + '}').join(String(arguments[i]));
+  return s;
+}
+
+function groupLabel(g) { return g.label || g.name; }
+
+// The label of an option by key, for a sentence that names the option that has to be turned on.
+function labelOf(key) {
+  for (const g of app.groups) for (const o of g.options) if (o.key === key) return o.label;
+  return key;
+}
+
 function el(tag, cls, text) {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -65,9 +95,9 @@ function callRaw(name, arg) {
 
 function call(name, arg) {
   const raw = callRaw(name, arg);
-  if (!raw) { console.error('[awe] ' + name + ' answered nothing'); return { ok: false, msg: 'Something went wrong.' }; }
+  if (!raw) { console.error('[awe] ' + name + ' answered nothing'); return { ok: false, msg: t('Something went wrong.') }; }
   try { return JSON.parse(raw); }
-  catch (e) { console.error('[awe] ' + name + ' answered something that is not JSON: ' + e.message); return { ok: false, msg: 'Something went wrong.' }; }
+  catch (e) { console.error('[awe] ' + name + ' answered something that is not JSON: ' + e.message); return { ok: false, msg: t('Something went wrong.') }; }
 }
 
 // A note under the panel: red for an error, green ('info') for a change the app made on its own.
@@ -110,8 +140,9 @@ function fieldText(o) { return o.sentinel && parseFloat(o.value) === -1 ? String
 
 // The allowed range, shown in the help line so nobody has to find it by typing a wrong number.
 function rangeText(o) {
-  if (o.outside) return 'Outside the limits ' + o.min + '-' + o.max + '.';
-  return (app.unlimited ? 'Limits: ' : 'Range: ') + o.min + '-' + o.max + '.';
+  if (o.outside) return t('Outside the limits {0}-{1}.', o.min, o.max);
+  if (app.unlimited) return t('Limits: {0}-{1}.', o.min, o.max);
+  return t('Range: {0}-{1}.', o.min, o.max);
 }
 
 // A typed number outside the range is set to the nearest limit, with a note naming it. Text that is no number goes
@@ -121,8 +152,8 @@ function clampTyped(o, v) {
   if (o.sentinel && v.toLowerCase() === String(o.text).toLowerCase()) return { value: '-1', note: '' };
   const n = parseFloat(v);
   if (isNaN(n) || (o.sentinel && n === -1) || app.unlimited) return { value: v, note: '' };
-  if (n < o.min) return { value: String(o.min), note: 'Set to ' + o.min + ', the minimum.' };
-  if (n > o.max) return { value: String(o.max), note: 'Set to ' + o.max + ', the maximum.' };
+  if (n < o.min) return { value: String(o.min), note: t('Set to {0}, the minimum.', o.min) };
+  if (n > o.max) return { value: String(o.max), note: t('Set to {0}, the maximum.', o.max) };
   return { value: v, note: '' };
 }
 
@@ -133,7 +164,7 @@ function changedCount(g) { return g.options.filter(o => !o.isDefault).length; }
 function commit(o, raw, rowNode, note) {
   const r = call('set', { key: o.key, value: String(raw) });
   if (!r.ok) {
-    say(r.msg || 'Something went wrong.');
+    say(r.msg || t('Something went wrong.'));
     redrawRow(o, rowNode);
     return;
   }
@@ -143,7 +174,7 @@ function commit(o, raw, rowNode, note) {
 
 function reset(o, rowNode) {
   const r = call('reset', { key: o.key });
-  if (!r.ok) { say(r.msg || 'Something went wrong.'); return; }
+  if (!r.ok) { say(r.msg || t('Something went wrong.')); return; }
   say('');
   refreshOne(o, r.option, rowNode);
 }
@@ -190,10 +221,11 @@ function controls(o, rowNode) {
     ctl.appendChild(sw);
   } else if (o.kind === 'choice') {
     const seg = el('div', 'seg');
-    for (const c of o.choices || []) {
+    (o.choices || []).forEach((c, i) => {
       const picked = c.toLowerCase() === String(o.value).toLowerCase();
-      seg.appendChild(button('small opt-choice' + (picked ? ' on' : ''), null, c, () => { if (!picked) commit(o, c, rowNode); }));
-    }
+      const shown = (o.choiceLabels && o.choiceLabels[i]) || c;
+      seg.appendChild(button('small opt-choice' + (picked ? ' on' : ''), null, shown, () => { if (!picked) commit(o, c, rowNode); }));
+    });
     ctl.appendChild(seg);
   } else if (isNumber(o)) {
     ctl.appendChild(stepButton(o, -1, rowNode));
@@ -233,7 +265,7 @@ function buildRow(o) {
   // same way in both states, so a change never adds a line and nothing below the row moves.
   const head = el('div', 'head');
   head.appendChild(el('div', 'label', o.label));
-  if (o.editable) head.appendChild(el('div', 'sub default' + (changed ? '' : ' idle'), 'Default: ' + o.defText));
+  if (o.editable) head.appendChild(el('div', 'sub default' + (changed ? '' : ' idle'), t('Default: {0}', o.defText)));
   text.appendChild(head);
   // The range leads the help line: at its end the text breaks after the hyphen ("1-" / "32"), and Latin-1 has no
   // non-breaking hyphen.
@@ -249,9 +281,9 @@ function buildRow(o) {
   // Locked: the host's value when it has arrived, otherwise a wait note. Never a control.
   const ctl = el('div', 'ctl');
   ctl.appendChild(icon('i-lock', 'dim'));
-  ctl.appendChild(el('div', 'value locked', o.waiting ? 'Waiting for the host.' : o.text));
+  ctl.appendChild(el('div', 'value locked', o.waiting ? t('Waiting for the host.') : o.text));
   row.appendChild(ctl);
-  if (!o.waiting && app.notice) text.appendChild(el('div', 'sub', 'Set by the host.'));
+  if (!o.waiting && app.notice) text.appendChild(el('div', 'sub', t('Set by the host.')));
   return row;
 }
 
@@ -270,7 +302,7 @@ function drawGroups() {
     const b = el('div', 'group' + (i === app.group ? ' on' : ''));
     b.setAttribute('id', 'group-' + String(g.name).toLowerCase());
     b.appendChild(icon(groupIcon(g.name)));
-    b.appendChild(el('div', 'name', g.name));
+    b.appendChild(el('div', 'name', groupLabel(g)));
     // The number of changed options, so all nine groups keep one line and fit without a scrollbar.
     const n = changedCount(g);
     if (n > 0) b.appendChild(el('div', 'count', n));
@@ -286,25 +318,25 @@ function drawPane() {
   const rows = $('rows');
   head.replaceChildren();
   rows.replaceChildren();
-  if (!g) { rows.appendChild(el('div', 'empty', 'No settings.')); return; }
+  if (!g) { rows.appendChild(el('div', 'empty', t('No settings.'))); return; }
 
-  head.appendChild(el('div', 'pane-title', g.name));
+  head.appendChild(el('div', 'pane-title', groupLabel(g)));
   const changed = changedCount(g);
   if (changed > 0 && g.name !== 'Diagnostics') {
-    const sub = el('div', 'pane-sub', changed + ' changed');
+    const sub = el('div', 'pane-sub', t('{0} changed', changed));
     sub.setAttribute('id', 'pane-changed');
     head.appendChild(sub);
   }
   if (g.name === 'Diagnostics') {
-    const b = button('ghost small', null, 'Refresh', () => renderDiag());
+    const b = button('ghost small', null, t('Refresh'), () => renderDiag());
     b.setAttribute('id', 'diag-refresh');
     head.appendChild(b);
-    const run = button('small disabled', null, 'Run check', () => runDoctor());
+    const run = button('small disabled', null, t('Run check'), () => runDoctor());
     run.setAttribute('id', 'diag-doctor-run');
     head.appendChild(run);
   }
   if (g.options.some(o => !o.isDefault && o.editable)) {
-    const b = button('ghost small', 'i-reset', 'Reset group', () => {
+    const b = button('ghost small', 'i-reset', t('Reset group'), () => {
       for (const o of g.options) if (!o.isDefault && o.editable) call('reset', { key: o.key });
       refresh(true);
     });
@@ -319,7 +351,7 @@ function drawPane() {
     box.setAttribute('id', 'diag');
     rows.appendChild(box);
   }
-  if (!g.options.length) { rows.appendChild(el('div', 'empty', 'No settings.')); return; }
+  if (!g.options.length) { rows.appendChild(el('div', 'empty', t('No settings.'))); return; }
   const list = el('div', 'list');
   list.setAttribute('id', 'list');
   for (const o of g.options) list.appendChild(buildRow(o));
@@ -334,7 +366,7 @@ function drawPaneSub() {
   const old = $('pane-changed');
   if (!g) return;
   const n = changedCount(g);
-  if (old && n > 0) { old.textContent = n + ' changed'; return; }
+  if (old && n > 0) { old.textContent = t('{0} changed', n); return; }
   // Appearing or vanishing also adds or drops Reset group, so the whole pane is rebuilt.
   if (!!old !== n > 0) drawPane();
 }
@@ -368,17 +400,17 @@ function note(id, text) {
   return n;
 }
 
-function sevLabel(s) { return s === 'problem' ? 'Problem' : s === 'warning' ? 'Warning' : s === 'ok' ? 'OK' : 'Info'; }
+function sevLabel(s) { return s === 'problem' ? t('Problem') : s === 'warning' ? t('Warning') : s === 'ok' ? t('OK') : t('Info'); }
 
 function badgesCard(d) {
   const b = d.badges;
-  const { c, head } = card('diag-badges', 'Employee badges');
-  if (!d.host) { c.appendChild(note('diag-badges-note', 'Host only.')); return c; }
-  if (!b.enabled) { c.appendChild(note('diag-badges-note', 'Off. Turn on Show problem badges.')); return c; }
-  const count = el('div', 'card-sub', b.problems + ' of ' + b.items.length + ' with a problem');
+  const { c, head } = card('diag-badges', t('Employee badges'));
+  if (!d.host) { c.appendChild(note('diag-badges-note', t('Host only.'))); return c; }
+  if (!b.enabled) { c.appendChild(note('diag-badges-note', t('Off. Turn on {0}.', labelOf('diagnostics.showproblembadges')))); return c; }
+  const count = el('div', 'card-sub', t('{0} of {1} with a problem', b.problems, b.items.length));
   count.setAttribute('id', 'diag-badges-count');
   head.appendChild(count);
-  if (!b.items.length) { c.appendChild(note('diag-badges-note', 'No employees.')); return c; }
+  if (!b.items.length) { c.appendChild(note('diag-badges-note', t('No employees.'))); return c; }
   for (const it of b.items) {
     const row = el('div', 'badge-row sev-' + it.sev);
     const chip = el('div', 'chip ' + it.sev, sevLabel(it.sev));
@@ -394,12 +426,12 @@ function badgesCard(d) {
 
 function doctorCard(d) {
   const x = d.doctor;
-  const { c } = card('diag-doctor', 'Setup Doctor');
-  if (!d.host) { c.appendChild(note('diag-doctor-note', 'Host only.')); return c; }
-  if (!x.enabled) { c.appendChild(note('diag-doctor-note', 'Off. Turn on Enable Setup Doctor.')); return c; }
-  if (!x.ran) { c.appendChild(note('diag-doctor-summary', 'Not run yet.')); return c; }
-  c.appendChild(note('diag-doctor-summary', x.summary + ', ' + x.ageSec + ' s ago'));
-  if (x.total === 0) { c.appendChild(note('diag-doctor-empty', 'No problems found.')); return c; }
+  const { c } = card('diag-doctor', t('Setup Doctor'));
+  if (!d.host) { c.appendChild(note('diag-doctor-note', t('Host only.'))); return c; }
+  if (!x.enabled) { c.appendChild(note('diag-doctor-note', t('Off. Turn on {0}.', labelOf('diagnostics.enablesetupdoctor')))); return c; }
+  if (!x.ran) { c.appendChild(note('diag-doctor-summary', t('Not run yet.'))); return c; }
+  c.appendChild(note('diag-doctor-summary', t('{0}, {1} s ago', x.summary, x.ageSec)));
+  if (x.total === 0) { c.appendChild(note('diag-doctor-empty', t('No problems found.'))); return c; }
   for (const f of x.findings) {
     const row = el('div', 'finding sev-' + f.sev);
     row.appendChild(el('div', 'chip ' + f.sev, sevLabel(f.sev)));
@@ -410,29 +442,29 @@ function doctorCard(d) {
     row.appendChild(t);
     c.appendChild(row);
   }
-  if (x.total > x.shown) c.appendChild(note('diag-doctor-more', (x.total - x.shown) + ' more not shown.'));
+  if (x.total > x.shown) c.appendChild(note('diag-doctor-more', t('{0} more not shown.', x.total - x.shown)));
   return c;
 }
 
 function analyticsCard(d) {
   const a = d.analytics;
-  const { c, head } = card('diag-analytics', 'Idle time');
-  const clear = button('ghost small' + (a.enabled && d.host ? '' : ' disabled'), null, 'Clear', () => {
+  const { c, head } = card('diag-analytics', t('Idle time'));
+  const clear = button('ghost small' + (a.enabled && d.host ? '' : ' disabled'), null, t('Clear'), () => {
     if (!a.enabled || !d.host) return;
     const r = call('analyticsReset');
-    if (!r.ok) { say(r.msg || 'Something went wrong.'); return; }
+    if (!r.ok) { say(r.msg || t('Something went wrong.')); return; }
     say('');
     renderDiag(r);
   });
   clear.setAttribute('id', 'diag-analytics-reset');
   head.appendChild(clear);
-  if (!d.host) { c.appendChild(note('diag-analytics-status', 'Host only.')); return c; }
-  if (!a.enabled) { c.appendChild(note('diag-analytics-status', 'Off. Turn on Track idle time and reason.')); return c; }
-  c.appendChild(note('diag-analytics-status', 'Every ' + a.interval + ' s, ' + a.samples + ' samples'));
+  if (!d.host) { c.appendChild(note('diag-analytics-status', t('Host only.'))); return c; }
+  if (!a.enabled) { c.appendChild(note('diag-analytics-status', t('Off. Turn on {0}.', labelOf('diagnostics.enableanalytics')))); return c; }
+  c.appendChild(note('diag-analytics-status', t('Every {0} s, {1} samples', a.interval, a.samples)));
   for (const it of a.items) {
     const row = el('div', 'an-row');
     row.appendChild(el('div', 'badge-name', it.name + ' - ' + it.role));
-    row.appendChild(el('div', 'badge-msg', 'Idle ' + it.idlePct + '% (' + it.idle + ' of ' + it.samples + ')'));
+    row.appendChild(el('div', 'badge-msg', t('Idle {0}% ({1} of {2})', it.idlePct, it.idle, it.samples)));
     for (const r of it.reasons) row.appendChild(el('div', 'an-reason', r.count + 'x ' + r.text));
     c.appendChild(row);
   }
@@ -445,7 +477,7 @@ function canRunDoctor(d) { return !!(d && d.ok && d.host && d.doctor && d.doctor
 function runDoctor() {
   if (!canRunDoctor(app.diag)) return;
   const r = call('doctorRun');
-  if (!r.ok) { say(r.msg || 'Something went wrong.'); return; }
+  if (!r.ok) { say(r.msg || t('Something went wrong.')); return; }
   say('');
   renderDiag(r);
 }
@@ -459,7 +491,7 @@ function renderDiag(answer) {
   const run = $('diag-doctor-run');
   if (run) run.className = 'btn small' + (canRunDoctor(d) ? '' : ' disabled');
   box.replaceChildren();
-  if (!d.ok) { box.appendChild(note('diag-error', d.msg || 'Something went wrong.')); return; }
+  if (!d.ok) { box.appendChild(note('diag-error', d.msg || t('Something went wrong.'))); return; }
   box.appendChild(badgesCard(d));
   box.appendChild(doctorCard(d));
   box.appendChild(analyticsCard(d));
@@ -474,7 +506,7 @@ const LIMITS_KEY = 'general.allowoutofrange';
 function limitsControl(id) {
   const box = el('div', 'limits' + (app.unlimited ? ' on' : ''));
   box.setAttribute('id', id);
-  box.appendChild(el('div', 'limits-label', 'Allow values outside the limits'));
+  box.appendChild(el('div', 'limits-label', t('Allow values outside the limits')));
   const sw = el('button', 'switch limits-switch' + (app.unlimited ? ' on' : ''));
   sw.appendChild(el('div', 'knob'));
   sw.addEventListener('click', () => {
@@ -492,13 +524,13 @@ function limitsControl(id) {
 function setLimits(on) {
   app.confirmLimits = false;
   const r = call('set', { key: LIMITS_KEY, value: on ? 'true' : 'false' });
-  if (!r.ok) { say(r.msg || 'Something went wrong.'); drawBar(); drawBand(); return; }
+  if (!r.ok) { say(r.msg || t('Something went wrong.')); drawBar(); drawBand(); return; }
   say('');
   refresh(true);
 }
 
 function drawBar() {
-  $('role').textContent = app.role === 'client' ? 'Client' : app.role === 'host' ? 'Host' : '';
+  $('role').textContent = app.role === 'client' ? t('Client') : app.role === 'host' ? t('Host') : '';
   const slot = $('limits-bar');
   slot.replaceChildren();
   slot.appendChild(limitsControl('limits'));
@@ -506,34 +538,34 @@ function drawBar() {
   end.replaceChildren();
   // A client resets its own local options; the host's values stay as they are.
   if (app.confirmLimits) {
-    const yes = button('danger small', null, 'Allow', () => setLimits(true));
+    const yes = button('danger small', null, t('Allow'), () => setLimits(true));
     yes.setAttribute('id', 'limits-confirm');
-    const no = button('ghost small', null, 'Cancel', () => { app.confirmLimits = false; drawBar(); drawBand(); });
+    const no = button('ghost small', null, t('Cancel'), () => { app.confirmLimits = false; drawBar(); drawBand(); });
     no.setAttribute('id', 'limits-cancel');
     end.appendChild(yes);
     end.appendChild(no);
   } else if (app.confirmFast) {
-    const yes = button('small', 'i-fast', 'Apply fast preset?', () => { app.confirmFast = false; doPreset('fast'); });
+    const yes = button('small', 'i-fast', t('Apply fast preset?'), () => { app.confirmFast = false; doPreset('fast'); });
     yes.setAttribute('id', 'preset-fast-confirm');
-    const no = button('ghost small', null, 'Cancel', () => { app.confirmFast = false; drawBar(); });
+    const no = button('ghost small', null, t('Cancel'), () => { app.confirmFast = false; drawBar(); });
     no.setAttribute('id', 'preset-fast-cancel');
     end.appendChild(yes);
     end.appendChild(no);
   } else if (app.confirmAll) {
-    const yes = button('danger small', null, 'Reset all?', () => { app.confirmAll = false; doResetAll(); });
+    const yes = button('danger small', null, t('Reset all?'), () => { app.confirmAll = false; doResetAll(); });
     yes.setAttribute('id', 'reset-all-confirm');
-    const no = button('ghost small', null, 'Cancel', () => { app.confirmAll = false; drawBar(); });
+    const no = button('ghost small', null, t('Cancel'), () => { app.confirmAll = false; drawBar(); });
     no.setAttribute('id', 'reset-all-cancel');
     end.appendChild(yes);
     end.appendChild(no);
   } else {
     // The preset writes host-controlled options only, so a client has nothing it could change with it.
     if (!app.locked) {
-      const f = button('ghost small', 'i-fast', 'Fast', () => { app.confirmFast = true; app.confirmAll = false; app.confirmLimits = false; drawBar(); drawBand(); });
+      const f = button('ghost small', 'i-fast', t('Fast'), () => { app.confirmFast = true; app.confirmAll = false; app.confirmLimits = false; drawBar(); drawBand(); });
       f.setAttribute('id', 'preset-fast');
       end.appendChild(f);
     }
-    const b = button('ghost small', 'i-reset', 'Reset all', () => { app.confirmAll = true; app.confirmFast = false; app.confirmLimits = false; drawBar(); drawBand(); });
+    const b = button('ghost small', 'i-reset', t('Reset all'), () => { app.confirmAll = true; app.confirmFast = false; app.confirmLimits = false; drawBar(); drawBand(); });
     b.setAttribute('id', 'reset-all');
     end.appendChild(b);
   }
@@ -544,13 +576,13 @@ function drawBand() {
   let msg = '';
   let danger = false;
   if (app.confirmLimits) {
-    msg = 'Values outside the limits are untested. They can stall employees, break stations or slow the game.';
+    msg = t('Values outside the limits are untested. They can stall employees, break stations or slow the game.');
     danger = true;
   }
-  else if (app.locked) msg = app.notice || (app.unlimited ? 'Values outside the limits are allowed for your own settings.' : '');
-  else if (app.vanilla) msg = 'Vanilla balance is on.';
-  else if (app.unlimited) msg = 'Values outside the limits are allowed.';
-  if (!msg) { band.className = 'band hidden'; return; }
+  else if (app.locked) msg = app.notice || (app.unlimited ? t('Values outside the limits are allowed for your own settings.') : '');
+  else if (app.vanilla) msg = t('Vanilla balance is on.');
+  else if (app.unlimited) msg = t('Values outside the limits are allowed.');
+  if (!msg) { $('band-text').textContent = ''; band.className = 'band hidden'; return; }
   $('band-text').textContent = msg;
   band.className = danger ? 'band danger' : 'band';
 }
@@ -574,7 +606,7 @@ function backToList() { $('screen').className = 'screen on-list'; }
 
 function doResetAll() {
   const r = call('resetAll');
-  if (!r.ok) { say(r.msg || 'Something went wrong.'); drawBar(); return; }
+  if (!r.ok) { say(r.msg || t('Something went wrong.')); drawBar(); return; }
   say('');
   apply(r, null);
 }
@@ -582,7 +614,7 @@ function doResetAll() {
 // Writes the preset's values once; afterwards they are ordinary settings.
 function doPreset(name) {
   const r = call('preset', { name });
-  if (!r.ok) { say(r.msg || 'Something went wrong.'); drawBar(); return; }
+  if (!r.ok) { say(r.msg || t('Something went wrong.')); drawBar(); return; }
   say('');
   apply(r, null);
 }
@@ -603,13 +635,15 @@ function apply(state, raw) {
 
 // Loads the list and redraws, unless it is the text already on screen.
 function refresh(force) {
+  loadStrings();
+  $('title').textContent = t('Employees');
   const raw = callRaw('list');
-  if (!raw) { console.error('[awe] list answered nothing'); say('Something went wrong.'); return; }
+  if (!raw) { console.error('[awe] list answered nothing'); say(t('Something went wrong.')); return; }
   if (!force && raw === app.raw) return;
   let state;
   try { state = JSON.parse(raw); }
-  catch (e) { console.error('[awe] list answered something that is not JSON: ' + e.message); say('Something went wrong.'); return; }
-  if (!state.ok) { say(state.msg || 'Something went wrong.'); return; }
+  catch (e) { console.error('[awe] list answered something that is not JSON: ' + e.message); say(t('Something went wrong.')); return; }
+  if (!state.ok) { say(state.msg || t('Something went wrong.')); return; }
   say('');
   apply(state, raw);
 }
