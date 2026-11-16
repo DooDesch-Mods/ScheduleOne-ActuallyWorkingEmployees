@@ -74,7 +74,7 @@
  "Show host-controlled notice": "Hinweis zur Host-Steuerung anzeigen",
  "Shows a notice at the top of this app on a co-op client when the host controls settings.": "Zeigt auf einem Koop-Client oben in dieser App einen Hinweis, wenn der Host die Einstellungen steuert.",
  "Use vanilla balance": "Vanilla-Balance verwenden",
- "Every balance setting acts as in the base game while on. Fixes stay active.": "Solange aktiv, wirkt jede Balance-Einstellung wie im Grundspiel. Die Korrekturen bleiben aktiv.",
+ "Pauses your changes to speed, wage, maximums and timing without deleting them. Fixes stay active.": "Setzt deine Änderungen an Tempo, Lohn, Höchstwerten und Zeiten aus, ohne sie zu löschen. Die Korrekturen bleiben aktiv.",
  "Allow values outside the limits": "Werte außerhalb der Grenzen erlauben",
  "Number settings accept any value. Values outside the limits are untested.": "Zahleneinstellungen nehmen jeden Wert an. Werte außerhalb der Grenzen sind nicht getestet.",
  "Employees pass through each other": "Mitarbeiter durchdringen einander",

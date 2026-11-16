@@ -8,7 +8,7 @@ const N = (kind, group, id, label, help, def, min, max, step, extra = {}) => ({ 
 const C = (group, id, label, help, def, choices) => ({ group, key: (group + '.' + id).toLowerCase(), label, help, kind: 'choice', def, value: def, choices, hostOnly: true, balance: true });
 
 const OPTIONS = [
-  B('General', 'UseVanillaBalance', 'Use vanilla balance', 'Every balance setting acts as in the base game while on. Fixes stay active.', false, { balance: false }),
+  B('General', 'UseVanillaBalance', 'Use vanilla balance', 'Pauses your changes to speed, wage, maximums and timing without deleting them. Fixes stay active.', false, { balance: false }),
   B('General', 'DisableEmployeeCollision', 'Employees pass through each other', 'Employees no longer block each other while walking. Vanilla: off.', false),
   B('General', 'VerboseLogging', 'Verbose log', 'Writes detailed debug lines to the log.', false, { hostOnly: false }),
   B('Reliability', 'StuckRescue', 'Rescue stuck employees', 'Teleports an employee that has not moved for a while.', true),
