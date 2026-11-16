@@ -3,7 +3,7 @@ namespace ActuallyWorkingEmployees.Config
     public static partial class Options
     {
         public static readonly BoolOption UseVanillaBalance = new BoolOption("General", "UseVanillaBalance",
-            "Use vanilla balance", "Every balance setting acts as in the base game while on. Fixes stay active.",
+            "Use vanilla balance", "Pauses your changes to speed, wage, maximums and timing without deleting them. Fixes stay active.",
             false, hostOnly: true, balance: false);
 
         /// <summary>
