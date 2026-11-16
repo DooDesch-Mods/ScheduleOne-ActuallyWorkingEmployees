@@ -104,7 +104,7 @@ namespace ActuallyWorkingEmployees.Host
                 int locked = 0;
                 foreach (Option o in Options.All) if (!o.Editable) locked++;
                 Core.Log?.Msg("[Dev] awe app dump: " + groups + " groups, " + Options.All.Count + " options rendered, "
-                    + locked + " locked, role=" + state["role"] + ", " + state.ToString(Newtonsoft.Json.Formatting.None).Length + " chars.");
+                    + locked + " locked, role=" + state["role"] + ", " + state.ToString(Newtonsoft.Json.Formatting.None, new Newtonsoft.Json.JsonConverter[0]).Length + " chars.");
             }
             else if (sub == "diag")
             {
