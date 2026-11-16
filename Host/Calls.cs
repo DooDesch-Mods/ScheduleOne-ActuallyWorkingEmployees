@@ -35,13 +35,13 @@ namespace ActuallyWorkingEmployees.Host
             try
             {
                 JObject a = string.IsNullOrWhiteSpace(arg) ? new JObject() : JObject.Parse(arg);
-                return (handler(a) ?? Fail("Something went wrong.")).ToString(Formatting.None);
+                return (handler(a) ?? Fail("Something went wrong.")).ToString(Formatting.None, new JsonConverter[0]);
             }
             catch (Exception e)
             {
                 Core.Failed("app: call " + name, e);
                 Core.Log?.Error("[App] " + name + "(" + arg + ") failed: " + e.Message);
-                return Fail("Something went wrong.").ToString(Formatting.None);
+                return Fail("Something went wrong.").ToString(Formatting.None, new JsonConverter[0]);
             }
         }
 
