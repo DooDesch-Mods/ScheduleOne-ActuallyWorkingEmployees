@@ -4,6 +4,13 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.3.1] - 2026-11-16
+
+### Changed
+
+- "Use vanilla balance" now says what it pauses: your speed, wage, maximum and timing changes. They come back when
+  you switch it off.
+
 ## [1.3.0] - 2026-11-16
 
 ### Added
