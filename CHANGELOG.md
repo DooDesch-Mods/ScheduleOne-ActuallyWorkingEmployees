@@ -4,6 +4,12 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.2.1] - 2026-11-16
+
+### Fixed
+
+- The phone app no longer opens empty with "Something went wrong" on older MelonLoader versions such as 0.7.0.
+
 ## [1.2.0] - 2026-11-09
 
 ### Added
