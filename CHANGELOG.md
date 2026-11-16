@@ -4,6 +4,15 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.3.0] - 2026-11-16
+
+### Added
+
+- The Employees app and all its settings are now in German on a German system. `Language` under `[DooDesch]` picks
+  the language by hand.
+- Other languages can be added as a file: copy the template from
+  `UserData/DooDesch/Localization/ActuallyWorkingEmployees/` and translate the values.
+
 ## [1.2.1] - 2026-11-16
 
 ### Fixed
