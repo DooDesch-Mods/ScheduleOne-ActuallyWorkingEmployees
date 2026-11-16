@@ -18,6 +18,11 @@
   <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/ModVersion.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/ModVersion.props')" />
   <Import Project="$(MSBuildThisFileDirectory)Workspace/build/ModVersion.props" Condition="Exists('$(MSBuildThisFileDirectory)Workspace/build/ModVersion.props')" />
 
+  <!-- Shared gettext-style localization (DooDesch.Localization.L10n): linked source, internal class. It comes after the
+       Compile Remove of Workspace/** above, or CI strips the linked file again. -->
+  <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/L10n.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/L10n.props')" />
+  <Import Project="$(MSBuildThisFileDirectory)Workspace/build/L10n.props" Condition="Exists('$(MSBuildThisFileDirectory)Workspace/build/L10n.props')" />
+
   <!-- Where a build is allowed to install: the test copy by default. See Workspace/build/Deploy.props. -->
   <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/Deploy.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/Deploy.props')" />
   <Import Project="$(MSBuildThisFileDirectory)Workspace/build/Deploy.props" Condition="Exists('$(MSBuildThisFileDirectory)Workspace/build/Deploy.props')" />
@@ -68,6 +73,13 @@
   <ItemGroup>
     <EmbeddedResource Include="Assets/app/*" Exclude="Assets/app/preview.html;Assets/app/s1-mock.js;Assets/app/sideload-preview.*;Assets/app/dom-surface.js;Assets/app/globals.js">
       <LogicalName>ActuallyWorkingEmployees.Assets.app.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- The German table: a flat JSON object, English text to German text. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets/l10n/de.json">
+      <LogicalName>ActuallyWorkingEmployees.Assets.l10n.de.json</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

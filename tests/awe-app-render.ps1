@@ -39,6 +39,7 @@ $css = Get-Content (Join-Path $PSScriptRoot '..\Assets\app\app.css') -Raw
 $side = [regex]::Matches($css, 'border-(top|right|bottom|left)-(color|style)\s*:') | ForEach-Object Value
 Result (-not $side) 'css-no-per-side-border-colour' $(if ($side) { "found: $($side -join ', ')" } else { 'none' })
 
+S1 run 'awe app lang en' | Out-Null   # the checks below read English texts; the OS language may be German
 $open = S1 run 'awe app open'
 Result ($open -match "app 'awe' opened") 'app-open' ($open.Split("`n")[-1])
 Settle

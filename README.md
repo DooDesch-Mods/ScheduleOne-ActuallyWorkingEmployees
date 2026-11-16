@@ -50,6 +50,8 @@ Open **Employees** on your phone. The groups are on the left, the settings of th
 - **Use vanilla balance** (General) makes every balance setting act like the base game while it is on. The fixes stay active.
 - The Diagnostics group has the Setup Doctor's **Run check** button, the problem badges and the idle time list.
 
+The app is in German and English and follows your system language (`Language` under `[DooDesch]` in `MelonPreferences.cfg` forces one). Another language is a file: copy `_template.de.json` from `UserData/DooDesch/Localization/ActuallyWorkingEmployees/` to `<code>.json` and translate the values.
+
 The app needs Sideload. Without it the settings still work through the file below.
 
 ## Configuration

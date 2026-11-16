@@ -36,6 +36,7 @@ function Shot([string]$name) {
 
 S1 run 'awe reset general.allowoutofrange' | Out-Null
 S1 run 'awe reset botanist.maxpots' | Out-Null
+S1 run 'awe app lang en' | Out-Null   # the checks below read English texts; the OS language may be German
 $open = S1 run 'awe app open'
 if ($open -notmatch "app 'awe' opened") { Write-Host "FAIL app-open $($open.Split("`n")[-1])"; Write-Host 'SUMMARY 0 pass, 1 fail'; exit 1 }
 Settle

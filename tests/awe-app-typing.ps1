@@ -25,6 +25,7 @@ function Typing { $t = S1 run 'awe app typing'; if ($t -match 'IsTyping=(\w+)') 
 function Settle { $t = (Get-Date).AddMilliseconds(1200); while ((Get-Date) -lt $t) { Start-Sleep -Milliseconds 200 } }
 function Finish { Write-Host "SUMMARY app-typing pass=$pass fail=$fail"; exit ([int]($fail -gt 0)) }
 
+S1 run 'awe app lang en' | Out-Null   # the checks below read English texts; the OS language may be German
 $open = S1 run 'awe app open'
 Result ($open -match "app 'awe' opened") 'app-open' ($open.Split("`n")[-1])
 Settle

@@ -18,6 +18,7 @@ function Result([bool]$ok, [string]$name, [string]$detail) {
 function S1 { param([Parameter(ValueFromRemainingArguments)][string[]]$A) (& python -I $s1 --slot $Slot @A 2>&1 | Out-String).Trim() }
 function Last([string]$t) { $t.Split("`n")[-1].Trim('"', ' ', "`r") }
 
+S1 run 'awe app lang en' | Out-Null   # the checks below read English texts; the OS language may be German
 $open = S1 run 'awe app open'
 Result ($open -match "app 'awe' opened") 'app-open' (Last $open)
 Start-Sleep -Seconds 3
