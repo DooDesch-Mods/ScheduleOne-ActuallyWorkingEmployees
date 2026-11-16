@@ -4,6 +4,13 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.3.2] - 2026-11-16
+
+### Fixed
+
+- With `Lab oven speed` above 1, lab ovens now finish when their timer hits 00:00. The beep and the chemist's
+  pickup used to wait for the normal cook time.
+
 ## [1.3.1] - 2026-11-16
 
 ### Changed
