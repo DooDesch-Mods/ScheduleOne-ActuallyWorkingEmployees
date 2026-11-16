@@ -30,6 +30,7 @@ The exit code is the number of FAILs. Waits are on log lines, `/health` and `wai
 
 - `awe-check.ps1` - the check table (one `New-Row` per check) and the runner.
 - `awe-coop.ps1` - host/client sync checks.
+- `awe-oven-speed.ps1` - lab oven speed: a chemist cooks one oven per speed (default 1, 2.5, 10); the timer at 00:00, the ding, the end of the count, the chemist's ready checks and his collect must land on the same cook minute (`awe ovencook`, `awe ovenrig`). About 8 min.
 - `awe-lib.ps1` - helpers: `Invoke-Awe` (s1.py run), log reads, bridge calls, background waits.
 - `awe_bridge.py` - bridge calls s1.py has no verb for (`health`, `save_now`, `return_to_menu`, `load_save`).
 - `awe-l10n-check.py` - static: every text of the code has a German entry in `Assets/l10n/de.json` (no English left, placeholders match, no stale key, Latin-1 only, no raw text in the page script). No game needed.

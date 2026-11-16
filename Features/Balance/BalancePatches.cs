@@ -205,20 +205,33 @@ namespace ActuallyWorkingEmployees.Features.Balance
         }
     }
 
-    /// <summary>Lab oven speed: minutes a cook operation needs.</summary>
+    /// <summary>
+    /// Lab oven speed: minutes a cook operation needs. GetCookDuration caches the ingredient's CookTime in the
+    /// operation's cookDuration field. In the IL2CPP build OvenCookOperation.IsComplete and IsReady read that field
+    /// without calling the patched method, and they decide the ding, the end of the count and the chemist's collect.
+    /// So the postfix writes the scaled minutes into the field too, computed from the module time each call, and every
+    /// reader (timer, ding, count, the chemist's choice and his collect) sees one value. A speed of 1 writes the module
+    /// time back, which also restores a cook that started at another speed.
+    /// </summary>
     [HarmonyPatch(typeof(OvenCookOperation), nameof(OvenCookOperation.GetCookDuration))]
     internal static class Awe_LabOven_Speed_Patch
     {
         private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
-        private static void Postfix(ref int __result)
+        private static void Postfix(OvenCookOperation __instance, ref int __result)
         {
             if (!Net.IsServer) return;
+            if (__instance == null) { Rel.MsgOnce("oven:null", "[bal-stations] GetCookDuration ran without an instance, its value is left unchanged."); return; }
             try
             {
+                var cookable = __instance.Cookable;
+                if (cookable == null) { Rel.MsgOnce("oven:nocookable", "[bal-stations] a lab oven operation has no CookableModule, its cook time is left unchanged."); return; }
+                int van = cookable.CookTime;
                 float s = StationBalance.Speed(Options.LabOvenSpeed);
-                if (Math.Abs(s - 1f) < 1e-4f) return;
-                __result = Math.Max(1, (int)Math.Round(__result / s));
-                StationPatches.Note("oven", "cook duration " + __result + " min");
+                int want = Math.Abs(s - 1f) < 1e-4f ? van : Math.Max(1, (int)Math.Round(van / s));
+                if (__instance.cookDuration != want) __instance.cookDuration = want;
+                if (__result == want) return;
+                __result = want;
+                StationPatches.Note("oven", "cook duration " + want + " min");
             }
             catch (Exception e) { Core.Caught("balance: lab oven speed", e); }
         }
