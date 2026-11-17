@@ -12,8 +12,8 @@ namespace ActuallyWorkingEmployees.Features.Balance
     /// <summary>
     /// Station and growth speeds. Pots, mushroom colonies, cauldrons and mixing stations carry the value in a field, which
     /// is written on the live object (the config constructors are native-called, so a patch on them never binds). Drying
-    /// racks and lab ovens read the speed in the DryingRack.GetDryMultiplier and OvenCookOperation.GetCookDuration
-    /// postfixes (see <see cref="StationPatches"/>).
+    /// racks read the speed in the DryingRack.OnTimePass prefix, lab ovens in the OvenCookOperation.GetCookDuration
+    /// postfix (see <see cref="StationPatches"/>).
     /// </summary>
     internal sealed class StationBalance : BalanceFeature
     {
