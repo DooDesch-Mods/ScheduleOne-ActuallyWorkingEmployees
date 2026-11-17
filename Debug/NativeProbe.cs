@@ -20,6 +20,7 @@ namespace ActuallyWorkingEmployees.Debugging
     ///              call, the order a late step back would run in; then calls both methods.
     ///   status     how often the foreign postfix ran.
     ///   unprobe    removes the foreign patch.
+    ///   siblings   for every method AWE patched, the game methods that share its native code.
     /// </summary>
     internal sealed class NativeProbe : IFeature
     {
@@ -31,7 +32,7 @@ namespace ActuallyWorkingEmployees.Debugging
 
         public void Init()
         {
-            DevConsole.Register("native", "awe native <addr|shared|opioid|stepback|status|unprobe>  (methods that share native code, AWE#51)", Dev);
+            DevConsole.Register("native", "awe native <addr|shared|opioid|stepback|status|unprobe|siblings>  (methods that share native code, AWE#51)", Dev);
         }
 
         public void Reset() { }
@@ -53,6 +54,7 @@ namespace ActuallyWorkingEmployees.Debugging
                 else if (mode == "opioid") { Probe(); Call("opioid"); }
                 else if (mode == "stepback") { Probe(); StepBack(); Call("stepback"); }
                 else if (mode == "unprobe") Unprobe();
+                else if (mode == "siblings") Siblings();
                 else Core.Log?.Msg("[Dev] [native] status: " + Status + ".");
             }
             catch (Exception e) { Core.Failed("native " + mode, e); }
@@ -108,6 +110,53 @@ namespace ActuallyWorkingEmployees.Debugging
             string p = pot == null ? "no pot" : Eff.F(pot.GetTemperatureGrowthMultiplier());
             string r = rack == null ? "no rack" : Eff.F(rack.GetDryMultiplier());
             Core.Log?.Msg("[Dev] [native] " + tag + ": calls returned, pot=" + p + " rack=" + r + " probeHits+" + (_hits - before) + ".");
+        }
+
+        /// <summary>
+        /// For every method AWE has patched, the other game methods (Assembly-CSharp) whose native code is the same
+        /// function. A mod that patches one of those after AWE detours the address a second time.
+        /// </summary>
+        private static void Siblings()
+        {
+            string own = Core.Instance.HarmonyInstance.Id;
+            var ownAt = new System.Collections.Generic.Dictionary<IntPtr, string>();
+            foreach (MethodBase m in HarmonyLib.Harmony.GetAllPatchedMethods())
+            {
+                var info = HarmonyLib.Harmony.GetPatchInfo(m);
+                if (info == null || !info.Owners.Contains(own)) continue;
+                IntPtr a = NativeMethods.AddressQuiet(m);
+                if (a == IntPtr.Zero) { Core.Log?.Msg("[Dev] [native] siblings: " + m.DeclaringType?.Name + "." + m.Name + " has no readable address."); continue; }
+                ownAt[a] = (ownAt.TryGetValue(a, out string s) ? s + ", " : "") + m.DeclaringType?.Name + "." + m.Name;
+            }
+            var found = new System.Collections.Generic.Dictionary<IntPtr, System.Collections.Generic.List<string>>();
+            int scanned = 0;
+            Type[] types;
+            try { types = typeof(Pot).Assembly.GetTypes(); }
+            catch (ReflectionTypeLoadException e) { types = Array.FindAll(e.Types, t => t != null); }
+            const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+            foreach (Type t in types)
+            {
+                if (t.IsGenericTypeDefinition) continue;
+                MethodInfo[] methods;
+                try { methods = t.GetMethods(all); } catch (Exception) { continue; }
+                foreach (MethodInfo m in methods)
+                {
+                    if (m.IsGenericMethodDefinition || m.IsAbstract) continue;
+                    IntPtr a = NativeMethods.AddressQuiet(m);
+                    if (a == IntPtr.Zero) continue;
+                    scanned++;
+                    if (!ownAt.ContainsKey(a)) continue;
+                    if (!found.TryGetValue(a, out var list)) found[a] = list = new System.Collections.Generic.List<string>();
+                    list.Add(t.Name + "." + m.Name);
+                }
+            }
+            foreach (var kv in ownAt)
+            {
+                var list = found.TryGetValue(kv.Key, out var l) ? l : new System.Collections.Generic.List<string>();
+                Core.Log?.Msg("[Dev] [native] siblings: 0x" + kv.Key.ToString("X") + " AWE patches " + kv.Value + "; " + list.Count + " method(s) share it"
+                    + (list.Count > 1 ? ": " + string.Join(", ", list) : "") + ".");
+            }
+            Core.Log?.Msg("[Dev] [native] siblings: " + ownAt.Count + " AWE address(es), " + scanned + " game method(s) scanned.");
         }
 
         private void Unprobe()

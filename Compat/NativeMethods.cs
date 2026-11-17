@@ -38,6 +38,13 @@ namespace ActuallyWorkingEmployees.Compat
             return a;
         }
 
+        /// <summary>Like <see cref="Address"/>, without a log line when the address cannot be read.</summary>
+        internal static IntPtr AddressQuiet(MethodBase m)
+        {
+            try { return TryAddress(m, out _); }
+            catch (Exception) { return IntPtr.Zero; }
+        }
+
         // Il2CppInteropUtils.GetIl2CppMethodInfoPointerFieldForGeneratedMethod reads the NativeMethodInfoPtr_ field that the
         // generated method body loads, so it tells overloads apart. Looked up by reflection: Il2CppInterop.Common is not a
         // compile reference of this mod.
