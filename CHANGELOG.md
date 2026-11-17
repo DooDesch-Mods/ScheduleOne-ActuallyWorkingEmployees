@@ -4,6 +4,13 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.3.3] - 2026-11-17
+
+### Fixed
+
+- `Drying rack speed` now changes how fast racks dry. It used to have no effect on the drying itself. It needs
+  `Enable station and growth speed` on.
+
 ## [1.3.2] - 2026-11-16
 
 ### Fixed
