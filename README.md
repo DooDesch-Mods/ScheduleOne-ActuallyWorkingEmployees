@@ -2,6 +2,8 @@
 
 > 🛟 **Need help or found a bug?** Get support at [support.doodesch.de/actuallyworkingemployees](https://support.doodesch.de/actuallyworkingemployees).
 
+**Download:** [Nexus Mods](https://www.nexusmods.com/schedule1/mods/3063) · [Thunderstore](https://thunderstore.io/c/schedule-i/p/DooDesch/ActuallyWorkingEmployees/) · [GitHub Releases](https://github.com/DooDesch-Mods/ScheduleOne-ActuallyWorkingEmployees/releases)
+
 [![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de)
 
 [![MLVScan ActuallyWorkingEmployees.dll](https://mlvscan.com/attestations/att_OYp0xn23FWnKWuv6Q3Vo8Utd/badge.svg)](https://mlvscan.com/attestations/att_OYp0xn23FWnKWuv6Q3Vo8Utd)
