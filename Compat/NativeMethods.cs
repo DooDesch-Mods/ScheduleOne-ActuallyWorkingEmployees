@@ -38,6 +38,20 @@ namespace ActuallyWorkingEmployees.Compat
             return a;
         }
 
+        /// <summary>
+        /// Like <see cref="Address"/>, but returns the reason in <paramref name="problem"/> instead of logging it, so a caller
+        /// that reads many methods can report the failures in its own line. <paramref name="problem"/> is null on success.
+        /// </summary>
+        internal static IntPtr AddressQuiet(MethodBase m, out string problem)
+        {
+            try { return TryAddress(m, out problem); }
+            catch (Exception e)
+            {
+                problem = m?.DeclaringType?.Name + "." + m?.Name + ": address read failed, " + e.GetType().Name + ": " + e.Message;
+                return IntPtr.Zero;
+            }
+        }
+
         // Il2CppInteropUtils.GetIl2CppMethodInfoPointerFieldForGeneratedMethod reads the NativeMethodInfoPtr_ field that the
         // generated method body loads, so it tells overloads apart. Looked up by reflection: Il2CppInterop.Common is not a
         // compile reference of this mod.

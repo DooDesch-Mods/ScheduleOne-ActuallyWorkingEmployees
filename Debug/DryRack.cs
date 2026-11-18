@@ -18,6 +18,8 @@ namespace ActuallyWorkingEmployees.Debugging
     ///   status              live rate since the mark: drying minutes gained per game minute.
     ///   pass [minutes]      sets the operations to 0 and calls DryingRack.OnTimePass(minutes) once, the path a time skip
     ///                       (sleeping) takes; reports the drying minutes gained per game minute.
+    ///   ui [close]          opens the rack's UI (DryingRackInterface.Open, as a player's click does) and compares the
+    ///                       time left each operation shows with the scaled rate (AWE#51); 'ui close' closes it.
     ///   clear               removes a rack this command placed.
     /// The expected rate is the vanilla multiplier (temperature) times the speed option.
     /// </summary>
@@ -32,7 +34,7 @@ namespace ActuallyWorkingEmployees.Debugging
 
         public void Init()
         {
-            DevConsole.Register("dryrack", "awe dryrack <setup [item] [qty]|mark|status|pass [minutes]|clear>  (drying minutes per game minute of one drying rack)", Dev);
+            DevConsole.Register("dryrack", "awe dryrack <setup [item] [qty]|mark|status|pass [minutes]|ui [close]|clear>  (drying minutes per game minute of one drying rack)", Dev);
         }
 
         public void Reset()
@@ -55,6 +57,7 @@ namespace ActuallyWorkingEmployees.Debugging
                 if (mode == "setup") Setup(args.Length > 1 ? args[1] : null, args.Length > 2 && int.TryParse(args[2], out int q) ? q : 5);
                 else if (mode == "mark") Mark();
                 else if (mode == "pass") Pass(args.Length > 1 && int.TryParse(args[1], out int m) ? m : 30);
+                else if (mode == "ui") Ui(args.Length > 1 ? args[1].ToLowerInvariant() : "");
                 else if (mode == "clear") Clear();
                 else Report();
             }
@@ -134,6 +137,39 @@ namespace ActuallyWorkingEmployees.Debugging
             _rack.OnTimePass(minutes);
             float t = _rack.DryingOperations.Count > 0 ? _rack.DryingOperations[0].Time : -1f;
             Core.Log?.Msg("[Dev] [dryrack] pass: minutes=" + minutes + " time=" + Eff.F(t) + " rate=" + Eff.F(t / minutes) + " " + Expect() + ".");
+        }
+
+        /// <summary>
+        /// Reopens the rack's UI, so every operation's tooltip is built from the operation's time in this frame, and checks
+        /// the rate and the "Xh Ym until next tier" text against the vanilla multiplier times the speed option.
+        /// </summary>
+        private void Ui(string arg)
+        {
+            var ui = Il2CppScheduleOne.UI.Stations.DryingRackInterface.Instance;
+            if (ui == null) { Core.Log?.Warning("[Dev] [dryrack] ui: no DryingRackInterface in the scene."); return; }
+            if (arg == "close")
+            {
+                if (ui.IsOpen) ui.Close();
+                Core.Log?.Msg("[Dev] [dryrack] ui: closed.");
+                return;
+            }
+            if (!Ready()) return;
+            if (ui.IsOpen) ui.Close();
+            ui.Open(_rack);
+            var list = ui.operationUIs;
+            if (list == null || list.Count == 0) { Core.Log?.Warning("[Dev] [dryrack] ui: opened, but it shows no drying operation."); return; }
+            float want = VanillaMultiplier() * StationBalance.Speed(Options.DryingRackSpeed);
+            for (int i = 0; i < list.Count; i++)
+            {
+                var op = list[i];
+                if (op == null || op.AssignedOperation == null) { Core.Log?.Warning("[Dev] [dryrack] ui: entry " + i + " has no operation."); continue; }
+                float time = op.AssignedOperation.Time;
+                int left = (int)((float)(int)Mathf.Clamp(720f - time, 0f, 720f) / want);
+                string expected = left / 60 + "h " + left % 60 + "m until next tier";
+                string shown = op.Tooltip != null ? op.Tooltip.text : "<no tooltip>";
+                Core.Log?.Msg("[Dev] [dryrack] ui: entry=" + i + " time=" + Eff.F(time) + " uiRate=" + Eff.F(op._dryMultiplier) + " expected=" + Eff.F(want)
+                    + " match=" + (shown == expected) + " shown='" + shown + "' want='" + expected + "'.");
+            }
         }
 
         private static DryingRack FindRack(out PropertyT property)

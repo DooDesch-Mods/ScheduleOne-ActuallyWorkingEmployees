@@ -5,6 +5,7 @@ using HarmonyLib;
 using Il2CppScheduleOne.Growing;
 using Il2CppScheduleOne.NPCs.Behaviour;
 using Il2CppScheduleOne.ObjectScripts;
+using Il2CppScheduleOne.UI.Stations;
 using ActuallyWorkingEmployees.Compat;
 using ActuallyWorkingEmployees.Config;
 using ActuallyWorkingEmployees.Features.Reliability;
@@ -187,41 +188,43 @@ namespace ActuallyWorkingEmployees.Features.Balance
     }
 
     /// <summary>
-    /// Drying speed as the rack's UI reads it: DryingRackInterface calls GetDryMultiplier to show the time left. The
-    /// drying itself does not reach this postfix (see <see cref="Awe_DryingRack_TimePass_Patch"/>), and while that patch
-    /// runs the postfix leaves the value alone, so a build where the native call does reach it never counts the speed twice.
+    /// Drying time left as the rack's UI shows it. DryingOperationUI.UpdatePosition turns the rate that
+    /// DryingRackInterface passed to SetDryRate into "Xh Ym until next tier"; this prefix sets that rate to the rack's
+    /// multiplier times the drying speed first. DryingRack.GetDryMultiplier itself is not patched: the native build folds
+    /// it with Pot.GetTemperatureGrowthMultiplier (the same code), and a mod that patches the pot method after AWE would
+    /// detour that address a second time and overflow the stack (AWE#51, Opioid Expansion).
     /// </summary>
-    [HarmonyPatch(typeof(DryingRack), nameof(DryingRack.GetDryMultiplier))]
-    internal static class Awe_DryingRack_Speed_Patch
+    [HarmonyPatch(typeof(DryingOperationUI), nameof(DryingOperationUI.UpdatePosition))]
+    internal static class Awe_DryingRack_TimeLeft_Patch
     {
         private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
-        private static void Postfix(ref float __result)
+        private static void Prefix(DryingOperationUI __instance)
         {
-            if (!Net.IsServer) return;
-            if (Awe_DryingRack_TimePass_Patch.InPass) return;
+            if (!Net.IsServer || __instance == null) return;
             try
             {
                 float s = StationBalance.Speed(Options.DryingRackSpeed);
                 if (Math.Abs(s - 1f) < 1e-4f) return;
-                __result *= s;
-                StationPatches.Note("rack", "dry multiplier " + Eff.F(__result));
+                DryingRack rack = DryingRackInterface.Instance?.Rack;
+                if (rack == null) { Rel.MsgOnce("rack-ui:none", "[bal-stations] a drying operation UI updated without an open drying rack; its time left stays vanilla."); return; }
+                float m = rack.GetDryMultiplier() * s;
+                __instance._dryMultiplier = m;
+                StationPatches.Note("rack-ui", "time left at rate " + Eff.F(m));
             }
-            catch (Exception e) { Core.Caught("balance: drying rack speed", e); }
+            catch (Exception e) { Core.Caught("balance: drying rack time left", e); }
         }
     }
 
     /// <summary>
     /// Drying speed: DryingRack.OnTimePass adds minutes x GetDryMultiplier() to every drying operation, once per game
-    /// minute (OnMinPass) and once per time skip. In the IL2CPP build its call to GetDryMultiplier does not go through the
-    /// Harmony postfix, so the speed never reached the drying. This prefix adds the difference, minutes x multiplier x
+    /// minute (OnMinPass) and once per time skip. In the IL2CPP build a Harmony patch on GetDryMultiplier does not reach
+    /// that call, and GetDryMultiplier shares its native code with Pot.GetTemperatureGrowthMultiplier. This prefix adds the difference, minutes x multiplier x
     /// (speed - 1), to each operation before the game adds its own share. Each operation then gains minutes x multiplier
     /// x speed, and the game's check for the next quality tier (720 drying minutes) sees the scaled time.
     /// </summary>
     [HarmonyPatch(typeof(DryingRack), nameof(DryingRack.OnTimePass))]
     internal static class Awe_DryingRack_TimePass_Patch
     {
-        /// <summary>True while OnTimePass runs on the host; the GetDryMultiplier postfix returns the unscaled value then.</summary>
-        internal static bool InPass;
         private static float _logged = float.NaN;
 
         private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
@@ -230,7 +233,6 @@ namespace ActuallyWorkingEmployees.Features.Balance
         {
             if (!Net.IsServer) return;
             if (__instance == null) { Rel.MsgOnce("rack:null", "[bal-stations] DryingRack.OnTimePass ran without an instance, its drying is left unchanged."); return; }
-            InPass = true;
             try
             {
                 float s = StationBalance.Speed(Options.DryingRackSpeed);
@@ -251,8 +253,6 @@ namespace ActuallyWorkingEmployees.Features.Balance
             }
             catch (Exception e) { Core.Caught("balance: drying rack time pass", e); }
         }
-
-        private static void Postfix() { InPass = false; }
     }
 
     /// <summary>

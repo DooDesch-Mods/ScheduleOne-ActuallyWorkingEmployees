@@ -8,7 +8,7 @@ Needs the Debug build ('awe dryrack'). 'awe dryrack setup' uses or places one dr
 the way a player does. Per speed:
   <speed>-skip   'awe dryrack pass 30' calls DryingRack.OnTimePass(30) once, the path a time skip (sleeping) takes.
   <speed>-live   'awe dryrack mark', then -LiveMinutes game minutes of normal play, the per-minute path.
-  <speed>-ui     the multiplier the rack's UI reads (DryingRack.GetDryMultiplier) matches the expected rate.
+  <speed>-ui     'awe dryrack ui' opens the rack's UI; the time left it shows matches the expected rate.
 The option is changed live with 'awe set' before each speed, so every row after the first is a live change.
 -Preloaded <speed>: the slot was started with that DryingRackSpeed and EnableStationSpeed=true already in
 UserData/ActuallyWorkingEmployees.cfg (AWE's own file; MelonPreferences.cfg is only read on the first start); the row
@@ -92,7 +92,10 @@ foreach ($speed in ($Speeds -split ',' | Where-Object { $_.Trim() } | ForEach-Ob
     Write-Host "  set: $(LastLine $set 'dryingrackspeed')"
     $p = Dry 'pass 30'
     Result (Near (Num $p 'rate') (Num $p 'expected')) "$tag-skip" "rate=$(Num $p 'rate') expected=$(Num $p 'expected')"
-    Result (Near (Num $p 'getDryMultiplier') (Num $p 'expected')) "$tag-ui" "getDryMultiplier=$(Num $p 'getDryMultiplier') expected=$(Num $p 'expected')"
+    $ui = @((S1 run 'awe dryrack ui') -split "`n" | Where-Object { $_ -match '\[dryrack\] ui: entry=' })
+    S1 run 'awe dryrack ui close' | Out-Null
+    $bad = @($ui | Where-Object { $_ -notmatch 'match=True' })
+    Result ($ui.Count -gt 0 -and $bad.Count -eq 0) "$tag-ui" "$($ui.Count) entr(y/ies), $($bad.Count) wrong: $(($ui | Select-Object -First 1) -replace '^.*ui: ', '')"
     Live $tag | Out-Null
 }
 Finish
