@@ -4,6 +4,13 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.3.4] - 2026-11-18
+
+### Fixed
+
+- Works together with Opioid Expansion: the game no longer crashes when a pot updates with both mods
+  installed.
+
 ## [1.3.3] - 2026-11-17
 
 ### Fixed
