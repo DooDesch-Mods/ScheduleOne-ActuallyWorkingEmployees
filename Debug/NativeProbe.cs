@@ -124,26 +124,43 @@ namespace ActuallyWorkingEmployees.Debugging
             {
                 var info = HarmonyLib.Harmony.GetPatchInfo(m);
                 if (info == null || !info.Owners.Contains(own)) continue;
-                IntPtr a = NativeMethods.AddressQuiet(m);
-                if (a == IntPtr.Zero) { Core.Log?.Msg("[Dev] [native] siblings: " + m.DeclaringType?.Name + "." + m.Name + " has no readable address."); continue; }
+                IntPtr a = NativeMethods.AddressQuiet(m, out string problem);
+                if (a == IntPtr.Zero) { Core.Log?.Warning("[Dev] [native] siblings: AWE target " + m.DeclaringType?.Name + "." + m.Name + " has no readable address (" + problem + ")."); continue; }
                 ownAt[a] = (ownAt.TryGetValue(a, out string s) ? s + ", " : "") + m.DeclaringType?.Name + "." + m.Name;
             }
             var found = new System.Collections.Generic.Dictionary<IntPtr, System.Collections.Generic.List<string>>();
-            int scanned = 0;
+            int scanned = 0, unreadable = 0, typeErrors = 0;
+            var firstProblems = new System.Collections.Generic.List<string>();
             Type[] types;
             try { types = typeof(Pot).Assembly.GetTypes(); }
-            catch (ReflectionTypeLoadException e) { types = Array.FindAll(e.Types, t => t != null); }
+            catch (ReflectionTypeLoadException e)
+            {
+                types = Array.FindAll(e.Types, t => t != null);
+                Core.Log?.Warning("[Dev] [native] siblings: " + (e.Types.Length - types.Length) + " type(s) of Assembly-CSharp did not load and are not scanned (" + e.Message + ").");
+            }
             const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
             foreach (Type t in types)
             {
                 if (t.IsGenericTypeDefinition) continue;
                 MethodInfo[] methods;
-                try { methods = t.GetMethods(all); } catch (Exception) { continue; }
+                try { methods = t.GetMethods(all); }
+                catch (Exception e)
+                {
+                    typeErrors++;
+                    if (firstProblems.Count < 3) firstProblems.Add(t.Name + ": methods not listed, " + e.GetType().Name + ": " + e.Message);
+                    continue;
+                }
                 foreach (MethodInfo m in methods)
                 {
                     if (m.IsGenericMethodDefinition || m.IsAbstract) continue;
-                    IntPtr a = NativeMethods.AddressQuiet(m);
-                    if (a == IntPtr.Zero) continue;
+                    IntPtr a = NativeMethods.AddressQuiet(m, out string problem);
+                    if (a == IntPtr.Zero)
+                    {
+                        // Managed helpers of the interop types have no NativeMethodInfoPtr_ field; they are counted, not listed.
+                        unreadable++;
+                        if (firstProblems.Count < 3) firstProblems.Add(problem);
+                        continue;
+                    }
                     scanned++;
                     if (!ownAt.ContainsKey(a)) continue;
                     if (!found.TryGetValue(a, out var list)) found[a] = list = new System.Collections.Generic.List<string>();
@@ -156,7 +173,8 @@ namespace ActuallyWorkingEmployees.Debugging
                 Core.Log?.Msg("[Dev] [native] siblings: 0x" + kv.Key.ToString("X") + " AWE patches " + kv.Value + "; " + list.Count + " method(s) share it"
                     + (list.Count > 1 ? ": " + string.Join(", ", list) : "") + ".");
             }
-            Core.Log?.Msg("[Dev] [native] siblings: " + ownAt.Count + " AWE address(es), " + scanned + " game method(s) scanned.");
+            Core.Log?.Msg("[Dev] [native] siblings: " + ownAt.Count + " AWE address(es), " + scanned + " game method(s) scanned, " + unreadable
+                + " without a readable address, " + typeErrors + " type(s) not listed" + (firstProblems.Count > 0 ? "; first: " + string.Join(" | ", firstProblems) : "") + ".");
         }
 
         private void Unprobe()
