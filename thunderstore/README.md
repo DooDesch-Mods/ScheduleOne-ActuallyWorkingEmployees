@@ -8,7 +8,7 @@
 
 [![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de)
 
-[![MLVScan ActuallyWorkingEmployees.dll](https://mlvscan.com/attestations/att_e6MYyyUFrbRth2yaV88v3MvP/badge.svg)](https://mlvscan.com/attestations/att_e6MYyyUFrbRth2yaV88v3MvP)
+[![MLVScan ActuallyWorkingEmployees.dll](https://mlvscan.com/attestations/att_sny8U99b9Ly0Ws2tlJHcoCJL/badge.svg)](https://mlvscan.com/attestations/att_sny8U99b9Ly0Ws2tlJHcoCJL)
 
 > Botanists, chemists, handlers and cleaners that stop mid-job, walk in circles or stand idle without a reason? This mod fixes them on the host and puts every employee setting in a phone app. Every setting starts at the vanilla value. Built on [S1API](https://github.com/ifBars/S1API) and [Sideload](https://thunderstore.io/c/schedule-i/p/DooDesch/Sideload/).
 
