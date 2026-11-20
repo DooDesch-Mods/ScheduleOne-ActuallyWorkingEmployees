@@ -9,9 +9,10 @@ the checks cover the real case; on any other save -Property names a property who
   no-guard-warn  the log has no "keeps capacity" warning from the loss guard since the save loaded
   follows-mod    the property's remembered vanilla capacity equals its live capacity (the other mod's value)
   foreign-set    'awe capacity <property> <n>' (as another mod) is taken over as the new vanilla value, logged as info
-  override-on    override on with capacity 12: the property has 12
-  override-off   override off: the property goes back to the other mod's value
-Resets the options at the end. Prints PASS or FAIL per check and a SUMMARY line.
+  override-below-mod  override on with capacity 12, below the other mod's value: the property keeps that value, logged
+  override-above-mod  override on above the other mod's value: the property has the override's value
+  override-off        override off: the property goes back to the other mod's value
+Resets the options and the property's capacity at the end. Prints PASS or FAIL per check and a SUMMARY line.
 #>
 param(
     [Parameter(Mandatory)][string]$Slot,
@@ -32,7 +33,7 @@ function Cap {
 }
 
 $log = (& python $s1 --slot $Slot log -n 4000 2>&1 | Out-String)
-$warn = @($log -split "`n" | Where-Object { $_ -match 'keeps capacity' })
+$warn = @($log -split "`n" | Where-Object { $_ -match 'keeps capacity \d+: it has' })
 Result ($warn.Count -eq 0) 'no-guard-warn' $(if ($warn.Count) { $warn[-1].Trim() } else { 'none in the log' })
 $info = @($log -split "`n" | Where-Object { $_ -match "\[bal-property\] .*$([regex]::Escape($Property)).*set by the game or another mod" })
 if ($info.Count) { Write-Host "  NOTE $($info[-1].Trim())" }
@@ -42,7 +43,9 @@ if (-not $c) { Write-Host "SUMMARY $pass pass, $($fail + 1) fail"; exit 1 }
 Result ($c.Van -eq $c.Cap -and $c.Ours -eq 0) 'follows-mod' $c.Line
 $modValue = $c.Cap
 
-$set = $modValue + 2
+$original = $modValue
+# Between the override's two test values, and at least the employee count, so the loss guard stays out of it.
+$set = [Math]::Max(20, $c.Emp)
 $null = Run "awe capacity $($c.Name) $set"
 Start-Sleep -Seconds 2
 $c = Cap
@@ -55,7 +58,16 @@ $null = Run 'awe set property.enableemployeecapacityoverride on'
 $null = Run 'awe set property.employeecapacity 12'
 Start-Sleep -Seconds 2
 $c = Cap
-Result ($c.Cap -eq 12 -and $c.Ours -eq 1) 'override-on' $c.Line
+# The line is logged once per load and value, so an earlier run in the same load already wrote it.
+$log = (& python $s1 --slot $Slot log -n 8000 2>&1 | Out-String)
+$kept = $log -match "\[bal-property\] $([regex]::Escape($c.Name)) keeps capacity $modValue from another mod"
+Result ($c.Cap -eq $modValue -and $c.Ours -eq 0 -and $kept) 'override-below-mod' "$($c.Line) expected=$modValue logged=$kept"
+
+$above = [Math]::Min(30, $modValue + 5)
+$null = Run "awe set property.employeecapacity $above"
+Start-Sleep -Seconds 2
+$c = Cap
+Result ($c.Cap -eq $above -and $c.Ours -eq 1) 'override-above-mod' "$($c.Line) expected=$above"
 
 $null = Run 'awe set property.enableemployeecapacityoverride off'
 Start-Sleep -Seconds 2
@@ -64,5 +76,6 @@ Result ($c.Cap -eq $modValue -and $c.Ours -eq 0) 'override-off' "$($c.Line) expe
 
 $null = Run 'awe reset property.employeecapacity'
 $null = Run 'awe reset property.enableemployeecapacityoverride'
+$null = Run "awe capacity $($c.Name) $original"
 Write-Host "SUMMARY $pass pass, $fail fail"
 if ($fail -gt 0) { exit 1 }

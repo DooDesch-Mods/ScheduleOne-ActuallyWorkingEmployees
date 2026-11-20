@@ -71,6 +71,13 @@ namespace ActuallyWorkingEmployees
             Log?.Warning("[" + where + "] " + message);
         }
 
+        /// <summary>An expected state worth one line. Logs at info level once per <paramref name="where"/>.</summary>
+        internal static void InfoOnce(string where, string message)
+        {
+            if (!_reported.Add(where)) return;
+            Log?.Msg("[" + where + "] " + message);
+        }
+
         /// <summary>A caught exception that made an action fail. Logs an error once per <paramref name="where"/>.</summary>
         internal static void Failed(string where, Exception e)
         {

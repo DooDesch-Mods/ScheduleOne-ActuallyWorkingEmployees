@@ -226,6 +226,8 @@ namespace ActuallyWorkingEmployees.Features.Balance
         private int _properties;
         // Capacity this feature wrote, per property instance. A live value that differs was set by someone else.
         private static readonly Dictionary<int, int> _written = new Dictionary<int, int>();
+        // Properties whose capacity another mod changed this session. The override never lowers those.
+        private static readonly HashSet<int> _foreign = new HashSet<int>();
 
         protected override IEnumerable<Option> Watched => new Option[] { Options.EnableEmployeeCapacityOverride, Options.EmployeeCapacity, Options.EmployeeCapacityLossGuard };
 
@@ -304,10 +306,18 @@ namespace ActuallyWorkingEmployees.Features.Balance
                 Vanilla.Set(prop, VSlot.Capacity, live);
                 van = live;
                 _written.Remove(id);
+                _foreign.Add(id);
                 ours = false;
             }
             if (!active && !ours) return;
             int want = active ? Options.EmployeeCapacity.Value : van;
+            // A capacity another mod raised belongs to that mod's own content (Based's finished rooms come with their
+            // places), so the override only ever lifts it further.
+            if (active && van > want && _foreign.Contains(id))
+            {
+                Core.InfoOnce("bal-property:kept:" + id + ":" + van, "[bal-property] " + prop.name + " keeps capacity " + van + " from another mod; the override's " + want + " is lower.");
+                want = van;
+            }
             if (live == want) { if (!active) _written.Remove(id); return; }
             int hired = prop.Employees != null ? prop.Employees.Count : 0;
             if (Options.EmployeeCapacityLossGuard.Value && want < hired)
@@ -320,7 +330,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
             Core.Log?.Msg("[bal-property] " + prop.name + ": capacity " + live + " -> " + want + ".");
         }
 
-        protected override void OnReset() { _written.Clear(); }
+        protected override void OnReset() { _written.Clear(); _foreign.Clear(); }
 
         protected override string Details() => "properties=" + _properties + " overridden=" + _written.Count;
     }
