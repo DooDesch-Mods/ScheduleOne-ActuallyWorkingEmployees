@@ -4,6 +4,17 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.3.5] - 2026-11-20
+
+### Fixed
+
+- Hiring at a property another mod expanded (Based's Sweatshop) keeps that mod's employee spots instead of resetting
+  them after every hire.
+- `EmployeeCapacity` no longer lowers a limit another mod raised: the Sweatshop's 30 dropped to 15 after every load.
+  A higher value still applies.
+- A hire that runs into a missing employee spot finishes and writes one warning with the numbers instead of six
+  errors.
+
 ## [1.3.4] - 2026-11-18
 
 ### Fixed

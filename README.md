@@ -10,7 +10,7 @@
 
 > Botanists, chemists, handlers and cleaners that stop mid-job, walk in circles or stand idle without a reason? This mod fixes them on the host and puts every employee setting in a phone app. Every setting starts at the vanilla value. Built on [S1API](https://github.com/ifBars/S1API) and [Sideload](https://thunderstore.io/c/schedule-i/p/DooDesch/Sideload/).
 
-![Version](https://img.shields.io/badge/version-1.3.4-blue)
+![Version](https://img.shields.io/badge/version-1.3.5-blue)
 ![Game](https://img.shields.io/badge/game-Schedule%20I-purple)
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.3+-green)
 ![S1API](https://img.shields.io/badge/S1API-required-orange)
@@ -205,7 +205,7 @@ Section `[AWE_Property]`. Employees per property.
 | Key | Default | What it does |
 |---|---|---|
 | `EnableEmployeeCapacityOverride` | Off | Uses the employee limit below for every property. Co-op guests without this mod get errors for employees beyond the property's idle spots. |
-| `EmployeeCapacity` | 0 | Employees a property can hold while the override is on. 0 = each property's own value. |
+| `EmployeeCapacity` | 0 | Employees a property can hold while the override is on. 0 = each property's own value. A higher limit set by another mod stays. |
 | `ShareIdlePoints` | On | Extra employees share idle spots when there are fewer spots than employees. |
 | `EmployeeCapacityLossGuard` | On | Refuses a lower capacity while a property has more employees than that. |
 
