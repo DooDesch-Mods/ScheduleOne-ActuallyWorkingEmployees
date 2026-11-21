@@ -26,6 +26,14 @@ namespace ActuallyWorkingEmployees.Config
             "Standstill attempts before giving up", "Resets tried before the employee's current task is released.",
             2, 1, 10, 1, hostOnly: true, balance: false);
 
+        public static readonly BoolOption FixStuckWork = new BoolOption("Reliability", "FixStuckWork",
+            "Restart stuck tasks", "Restarts the task of an employee that stands at its work without progress.",
+            true, hostOnly: true, balance: false);
+
+        public static readonly FloatOption StuckWorkSeconds = new FloatOption("Reliability", "StuckWorkSeconds",
+            "Stuck task time before restart", "Seconds an employee may stand at a task without progress before the task is restarted.",
+            120f, 30f, 600f, 10f, hostOnly: true, balance: false);
+
         public static readonly BoolOption FixChemistWorkInProgress = new BoolOption("Reliability", "FixChemistWorkInProgress",
             "Fix chemist stuck without cauldron", "Counts cauldrons as work in progress so a chemist does not wait forever.",
             true, hostOnly: true, balance: false);

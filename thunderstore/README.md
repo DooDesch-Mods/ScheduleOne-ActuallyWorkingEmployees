@@ -92,6 +92,8 @@ Section `[AWE_Reliability]`. The fixes. Each one has an on/off switch and, where
 | `StandstillSeconds` | 12 | Seconds an employee may stand still before it is reset. |
 | `StandstillRadius` | 0.5 | Distance in meters an employee must move to count as not standing still. |
 | `StandstillAttempts` | 2 | Resets tried before the employee's current task is released. |
+| `FixStuckWork` | On | Restarts the task of an employee that stands at its work without progress. |
+| `StuckWorkSeconds` | 120 | Seconds an employee may stand at a task without progress before the task is restarted. |
 | `FixChemistWorkInProgress` | On | Counts cauldrons as work in progress so a chemist does not wait forever. |
 | `ChemistIdleTimeout` | 5 | Seconds a chemist may idle before its task is reset. A running station is never interrupted. |
 | `FixLockLeak` | On | Frees station locks when an employee stops working or is fired. |
@@ -196,6 +198,7 @@ Section `[AWE_Stations]`. Station and growth speed. Needs `EnableStationSpeed` o
 | `DryingRackSpeed` | 1 | Speed multiplier for drying racks. |
 | `CauldronSpeed` | 1 | Speed multiplier for cauldron cooking. |
 | `LabOvenSpeed` | 1 | Speed multiplier for lab ovens. |
+| `ChemistryStationSpeed` | 1 | Speed multiplier for chemistry station cooking. |
 | `MixingStationSpeed` | 1 | Speed multiplier for mixing stations. |
 | `MixingStationMaxBatch` | 10 | Largest batch a mixing station takes. |
 | `ShowStationSpeedWarning` | On | Shows a hint on the Stations page that saved mixes and running stations keep their old time after a speed change. |
