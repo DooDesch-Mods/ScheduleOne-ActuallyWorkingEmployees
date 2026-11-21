@@ -23,7 +23,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
         protected override IEnumerable<Option> Watched => new Option[]
         {
             Options.EnableStationSpeed, Options.PlantGrowthSpeed, Options.MushroomGrowthSpeed, Options.DryingRackSpeed,
-            Options.CauldronSpeed, Options.LabOvenSpeed, Options.MixingStationSpeed, Options.MixingStationMaxBatch,
+            Options.CauldronSpeed, Options.LabOvenSpeed, Options.ChemistryStationSpeed, Options.MixingStationSpeed, Options.MixingStationMaxBatch,
         };
 
         protected override void OnInit()
@@ -34,6 +34,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
             Eff.Add(Options.DryingRackSpeed, () => StationPatches.Seen("rack"));
             Eff.Add(Options.CauldronSpeed, () => First<Cauldron>() is Cauldron c ? "cook time " + c.CookTime : "no cauldron");
             Eff.Add(Options.LabOvenSpeed, () => StationPatches.Seen("oven"));
+            Eff.Add(Options.ChemistryStationSpeed, () => ChemRecipes.Describe());
             Eff.Add(Options.MixingStationSpeed, () => First<MixingStation>() is MixingStation m ? "time per item " + m.MixTimePerItem : "no mixing station");
             Eff.Add(Options.MixingStationMaxBatch, () => First<MixingStation>() is MixingStation m ? m.MaxMixQuantity.ToString() : "no mixing station");
         }
@@ -67,6 +68,7 @@ namespace ActuallyWorkingEmployees.Features.Balance
             Math.Abs(Speed(Options.PlantGrowthSpeed) - 1f) > 1e-4f
             || Math.Abs(Speed(Options.MushroomGrowthSpeed) - 1f) > 1e-4f
             || Math.Abs(Speed(Options.CauldronSpeed) - 1f) > 1e-4f
+            || Math.Abs(Speed(Options.ChemistryStationSpeed) - 1f) > 1e-4f
             || Math.Abs(Speed(Options.MixingStationSpeed) - 1f) > 1e-4f
             || (Options.EnableStationSpeed.Value && Vanilla.Active(Options.MixingStationMaxBatch));
 
@@ -119,6 +121,8 @@ namespace ActuallyWorkingEmployees.Features.Balance
                 return;
             }
             _idleLogged = false;
+            try { ChemRecipes.Apply(Speed(Options.ChemistryStationSpeed)); }
+            catch (Exception e) { Core.Failed(Name + ": chemistry recipes", e); }
             CollectSources(_sources);
             _seen.Clear();
             _srcIdx = 0;
@@ -153,6 +157,9 @@ namespace ActuallyWorkingEmployees.Features.Balance
 
         protected override void OnReset()
         {
+            // Recipes are assets that outlive the save, so they go back to the game's time before the next save loads.
+            try { ChemRecipes.Restore(); }
+            catch (Exception e) { Core.Failed(Name + ": restore chemistry recipes", e); }
             _sweeping = false;
             _idleLogged = false;
             _sources.Clear();
