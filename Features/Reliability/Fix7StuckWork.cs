@@ -43,7 +43,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         public void Init()
         {
 #if DEBUG
-            DevConsole.Register("stuckwork", "awe stuckwork [kill|restart]  (stuck-work state of every employee / end the running work routine of the first employee working in place, so it stands with its task active / restart that employee's task now)", Dev);
+            DevConsole.Register("stuckwork", "awe stuckwork [kill|restart] [name]  (stuck-work state of every employee / end the running work routine of the first or named employee working in place, so it stands with its task active / restart that employee's task now)", Dev);
 #endif
         }
 
@@ -55,18 +55,29 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         {
             if (Time.time < _next) return;
             _next = Time.time + 1f;
-            if (!Rel.Gate(FeatureName, Options.FixStuckWork.Value)) return;
+            // The standstill watch runs on the host even with the restart switched off: the whip reads it to tell a stuck
+            // employee from a working one.
+            if (!Rel.Gate(FeatureName, true)) return;
+            bool restart = Options.FixStuckWork.Value;
+            if (!restart) Rel.MsgOnce(FeatureName + ":off", "[" + FeatureName + "] restart switched off by its option; the standstill watch keeps running for the whip.");
 
             Rel.EmployeesInto(_employees);
             for (int i = 0; i < _employees.Count; i++)
             {
                 Employee emp = _employees[i];
-                try { Check(emp); }
+                try { Check(emp, restart); }
                 catch (Exception e) { Core.Caught("fix7: check " + Rel.Name(emp), e); }
             }
         }
 
-        private static void Check(Employee emp)
+        /// <summary>Seconds the employee has stood at its active task without progress; 0 when it is not standing at one.</summary>
+        internal static float StillSeconds(Employee emp)
+        {
+            if (emp == null || !_watch.TryGetValue(emp.GetInstanceID(), out Watch w) || w.Task == IntPtr.Zero) return 0f;
+            return Time.time - w.Since;
+        }
+
+        private static void Check(Employee emp, bool restart)
         {
             int id = emp.GetInstanceID();
             if (emp.Behaviour == null) { Rel.MsgOnce("fix7:nobeh:" + id, "[" + FeatureName + "] " + Rel.Name(emp) + " has no behaviour component."); return; }
@@ -95,7 +106,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
             if (Time.time - w.LastRestart > allowed * 3f) w.Strikes = 0;
             float wait = allowed * (1 << Math.Min(w.Strikes, 2));
             float still = Time.time - w.Since;
-            if (still < wait) return;
+            if (still < wait || !restart) return;
 
             string why = Rel.TypeName(active) + " active for " + still.ToString("F0") + " s without progress (limit " + wait.ToString("F0") + " s)";
             if (Restart(emp, why, false))
@@ -211,6 +222,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         {
             if (!DevConsole.RequireHost("stuckwork")) return;
             string mode = args.Length > 0 ? args[0].ToLowerInvariant() : "";
+            string want = args.Length > 1 ? string.Join(" ", args, 1, args.Length - 1) : "";
             Employee first = null;
             foreach (Employee emp in Rel.Employees())
             {
@@ -221,19 +233,27 @@ namespace ActuallyWorkingEmployees.Features.Reliability
                 Core.Log?.Msg("[Dev] [Fix7] " + Rel.Name(emp) + " (" + WorkIssueInfo.RoleOf(emp) + "): behaviour=" + (a == null ? "none" : Rel.TypeName(a)) + " work=" + work
                     + " moving=" + (emp.Movement != null && emp.Movement.IsMoving) + " stillFor=" + (watched ? (Time.time - w.Since).ToString("F0") : "0")
                     + "s limit=" + (work ? Allowed(emp, a).ToString("F0") : "-") + "s strikes=" + (w == null ? 0 : w.Strikes));
-                if (first == null && work && emp.Movement != null && !emp.Movement.IsMoving) first = emp;
+                bool named = want.Length == 0 || Rel.Name(emp).IndexOf(want, StringComparison.OrdinalIgnoreCase) >= 0;
+                if (first == null && named && work && emp.Movement != null && !emp.Movement.IsMoving) first = emp;
             }
             Core.Log?.Msg("[Dev] [Fix7] " + new Fix7StuckWork().Status);
             if (mode == "") return;
-            if (first == null) { Core.Log?.Warning("[Dev] awe stuckwork " + mode + ": no employee works in place right now."); return; }
+            if (first == null)
+            {
+                Core.Log?.Warning("[Dev] awe stuckwork " + mode + ": no employee" + (want.Length > 0 ? " named '" + want + "'" : "") + " works in place right now.");
+                return;
+            }
             NpcBehaviour task = first.Behaviour.activeBehaviour;
             if (mode == "kill")
             {
                 // What an exception inside the work coroutine leaves behind: the routine is gone, the flags and the active
                 // task stay.
+                // The watch counts from the last progress, which can lie before the kill; the line names that head start.
+                float still = StillSeconds(first);
                 task.StopAllCoroutines();
                 first.Movement.Stop();
-                Core.Log?.Msg("[Dev] [Fix7] killed the work routine of " + Rel.Name(first) + " (" + Rel.TypeName(task) + "); the task stays active.");
+                Core.Log?.Msg("[Dev] [Fix7] killed the work routine of " + Rel.Name(first) + " (" + Rel.TypeName(task) + "); the task stays active, still for "
+                    + still.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + " s.");
             }
             else if (mode == "restart") Restart(first, "dev command", true);
             else Core.Log?.Warning("[Dev] awe stuckwork: unknown mode '" + mode + "'.");

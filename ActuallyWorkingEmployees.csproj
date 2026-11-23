@@ -76,6 +76,13 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <!-- The recorded whip swing, when present (Assets/whip/LICENSE names its source). Without it the crack is synthesized. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets/whip/*.wav">
+      <LogicalName>ActuallyWorkingEmployees.Assets.whip.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <!-- The German table: a flat JSON object, English text to German text. -->
   <ItemGroup>
     <EmbeddedResource Include="Assets/l10n/de.json">
@@ -145,6 +152,10 @@
       <HintPath>$(GameManagedPath)/UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.AIModule">
       <HintPath>$(GameManagedPath)/UnityEngine.AIModule.dll</HintPath>
       <Private>false</Private>
@@ -171,6 +182,14 @@
     </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>$(GameManagedPath)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.AnimationModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
