@@ -4,6 +4,23 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.4.0] - 2026-11-23
+
+### Added
+
+- The whip, $150 at the Gas-Mart: crack it at a working employee for +50% work and walk speed for one in-game hour,
+  stacking up to 3 times.
+- Crack the whip at an idle or stuck employee to restart their task.
+- 5 hits on the same employee within 3 seconds drop the boost and send them back to their waiting spot, every
+  assignment kept.
+- `WhipInShop`, `WhipPrice`, `WhipBoostPercent` and `WhipBoostMinutes` tune the whip.
+- `ChemistryStationSpeed` speeds up chemistry station cooking (default 1).
+
+### Fixed
+
+- Employees that stood still at a task while saying they were working restart it on their own after
+  `StuckWorkSeconds` (default 120). `FixStuckWork` turns this off.
+
 ## [1.3.5] - 2026-11-20
 
 ### Fixed
