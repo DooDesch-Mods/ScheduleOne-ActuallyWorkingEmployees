@@ -50,7 +50,18 @@ function State([string]$name) {
         Working = ($e -match 'working=1')
         Stacks = [int](Num $e 'stacks'); Ends = [int](Num $e 'ends'); Now = [int](Num $h 'now')
         Work = (Num $e 'workSpeed'); Walk = (Num $e 'walk'); WalkDefault = (Num $e 'walkDefault')
+        Returning = [int](Num $h 'returning')
     }
+}
+# Walk-back counters of the whip status (arrived + timedOut), taken before a reset.
+function Return-Ends { $h = (State '').Head; [int](Num $h 'arrived') + [int](Num $h 'timedOut') }
+# After a whip reset: waits until a walk back has ended since $endsBefore (the hold ends after at most 60 s), then
+# returns the last end line of that employee's walk back; empty when none ended.
+function Wait-Return([string]$name, [int]$endsBefore) {
+    $deadline = (Get-Date).AddSeconds(75)
+    while ((Return-Ends) -le $endsBefore -and (Get-Date) -lt $deadline) { Wait-Seconds 2 }
+    if ((Return-Ends) -le $endsBefore) { return '' }
+    LastLine (S1 log --grep $name -n 40) ('\[Whip\] ' + [regex]::Escape($name) + ' (is back at its waiting spot|did not reach its waiting spot|is no longer held|has no waiting spot)')
 }
 function Opt([string]$id) {
     $l = LastLine (S1 run "awe get general.$id") ("(?i)$id")
@@ -208,10 +219,18 @@ Result ($r -match ': boost \(') 'no-cooldown' "$r"
 
 # --- reset: the hits in one frame drop all stacks; spread over more than the window they do not
 Boost $target | Out-Null
+# The hit window may still hold the boost hits of the checks before.
+Wait-Seconds ($resetSecs + 0.5)
+$ends = Return-Ends
 $r = Hits $resetHits $target
 $s = State $target
-$resetLine = LastLine (S1 log --grep ' s: boost dropped, task restarted.' -n 5) 'times within'
-Result ($r -match ',reset$' -and $s.Stacks -eq 0 -and [math]::Abs($s.Work - $base) -lt 0.01 -and $resetLine) 'reset' ("$r | stacks $($s.Stacks), work {0:0.###} | $resetLine" -f $s.Work)
+$resetLine = LastLine (S1 log --grep ' s: boost dropped, back to the waiting spot.' -n 5) 'times within'
+$walkLine = LastLine (S1 log --grep ' walks back to its waiting spot' -n 5) ([regex]::Escape($target))
+Result ($r -match ',reset$' -and $s.Stacks -eq 0 -and [math]::Abs($s.Work - $base) -lt 0.01 -and $resetLine -and $walkLine) 'reset' ("$r | stacks $($s.Stacks), work {0:0.###} | $resetLine | $walkLine" -f $s.Work)
+# Vanilla's idle behaviour walks it to the property's idle point; it starts work again only once it is there.
+$back = Wait-Return $target $ends
+$s = State $target
+Result ($back -match 'is back at its waiting spot') 'reset-return' "$back | $($s.Head)"
 Wait-Seconds ($resetSecs + 0.5)
 $r1 = Hits ($resetHits - 1) $target
 Wait-Seconds ($resetSecs + 0.5)
@@ -222,15 +241,20 @@ Wait-Seconds ($resetSecs + 0.5)
 # --- burst: 5 real clicks, one every 0.3 s, through the click gate onto the target in front of the camera
 # The crack probe is a 0.25 m sphere: a botanist between tent poles can be out of reach from every side. Then the burst
 # goes to the first working employee the probe reaches.
-$bt = $target
-$face = LastLine (S1 run "awe whip face $target") '\[Whip\] face'
-if ($face -notmatch 'free view at') {
-    $face = LastLine (S1 run 'awe whip face') '\[Whip\] face'
-    if ($face -match 'face (.+?): spot=') { $bt = $Matches[1] }
-}
-if ($face -match 'free view at' -and $face -match 'spot=([-\d.]+),([-\d.]+),([-\d.]+) yaw=([-\d.]+)') {
+# Stacks off first: a boosted employee walks at up to 6 m/s and leaves the spot 'face' found before the clicks land.
+Skip ($mins + 5)
+$burstOk = $false; $detail = ''
+for ($try = 1; $try -le 2 -and -not $burstOk; $try++) {
+    $bt = $target
+    $face = LastLine (S1 run "awe whip face $target") '\[Whip\] face'
+    if ($face -notmatch 'free view at') {
+        $face = LastLine (S1 run 'awe whip face') '\[Whip\] face'
+        if ($face -match 'face (.+?): spot=') { $bt = $Matches[1] }
+    }
+    if (-not ($face -match 'free view at' -and $face -match 'spot=([-\d.]+),([-\d.]+),([-\d.]+) yaw=([-\d.]+)')) { $detail = "try $try rig: $face"; continue }
     S1 tp $Matches[1] $Matches[2] $Matches[3] --yaw $Matches[4] | Out-Null
     Wait-Seconds 1
+    $ends = Return-Ends
     S1 run "awe whip burst $resetHits 0.3" | Out-Null
     Wait-Seconds ($resetHits * 0.3 + 1.5)
     # Only the lines from the burst on: the 'reset' check above left a reset line of the same employee.
@@ -240,10 +264,17 @@ if ($face -match 'free view at' -and $face -match 'spot=([-\d.]+),([-\d.]+),([-\
     $log = if ($start -ge 0) { ($all[$start..($all.Count - 1)]) -join "`n" } else { '' }
     $ignored = @($log -split "`n" | Where-Object { $_ -match 'click ignored: the last swing' }).Count
     $hitLines = @($log -split "`n" | Where-Object { $_ -match '\[Whip\] snap: crack (played|inside the recorded swing|recorded, layered played), click: ' -and $_ -match [regex]::Escape($bt) }).Count
-    $burstReset = LastLine $log ([regex]::Escape($bt) + ' was hit .* times within .* s: boost dropped, task restarted')
-    Result ($ignored -eq 0 -and $hitLines -ge $resetHits -and $burstReset) 'burst-reset' "ignored $ignored, hits on $bt $hitLines | $burstReset | $face"
-} else { Result $false 'burst-reset' "rig: $face" }
-Skip ($mins + 5)
+    $burstReset = LastLine $log ([regex]::Escape($bt) + ' was hit .* times within .* s: boost dropped, back to the waiting spot')
+    $detail = "try $try, ignored $ignored, hits on $bt $hitLines | $burstReset | $face"
+    $burstOk = ($ignored -eq 0 -and $hitLines -ge $resetHits -and $burstReset)
+    # A miss (the probe hit something else) gets one more try from a fresh spot.
+    if (-not $burstOk -and $hitLines -eq 0) { Wait-Seconds ($resetSecs + 0.5) }
+}
+Result $burstOk 'burst-reset' $detail
+if ($burstOk) {
+    $back = Wait-Return $bt $ends
+    Result ($back -match 'is back at its waiting spot') 'burst-return' "$back"
+} else { Result $false 'burst-return' 'no burst reset' }
 Wait-Seconds ($resetSecs + 0.5)
 
 # --- stuck: kill the work routine of an employee working in place, 10 s of standstill, whip that employee

@@ -25,8 +25,9 @@ namespace ActuallyWorkingEmployees.Features.Whip
     /// the timer of all stacks to WhipBoostMinutes game minutes; when it runs out, all stacks end together. No cooldown.</item>
     /// <item>idle, or standing at its task without progress for <see cref="StuckAfterSeconds"/>: the task restart of
     /// Fix 7, the same one the watchdog does.</item>
-    /// <item>WhipResetHits hits on the same employee within WhipResetSeconds real seconds: all stacks end and the task
-    /// restarts, also while working.</item>
+    /// <item>WhipResetHits hits on the same employee within WhipResetSeconds real seconds: all stacks end, the task ends
+    /// and the employee walks back to its waiting spot before it picks up work again (<see cref="WhipReturn"/>), also
+    /// while working.</item>
     /// </list>
     /// The host decides and applies every effect; a co-op client sends its click through <see cref="WhipNet"/> and shows
     /// the answer. The work boost is its own entry in the employee's WorkSpeedController, so it multiplies with the work
@@ -77,13 +78,14 @@ namespace ActuallyWorkingEmployees.Features.Whip
             WhipItem.MarkUnchecked();
             WhipShop.ResetSession();
             WhipFx.ResetSession();
+            WhipReturn.ResetSession();
             foreach (Boost b in _boosts.Values) EndBoost(b);
             _boosts.Clear();
         }
 
         public string Status => "registered=" + (WhipItem.Available ? 1 : 0) + " held=" + (WhipEquippable.Ready ? 1 : 0)
             + " uses=" + _uses + " boosted=" + _boosted + " restarted=" + _restarted + " refused=" + _refused + " resets=" + _resets
-            + " activeBoosts=" + ActiveBoosts() + " net sent=" + WhipNet.Sent + " received=" + WhipNet.Received + " answered=" + WhipNet.Answered;
+            + " activeBoosts=" + ActiveBoosts() + " " + WhipReturn.Status + " net sent=" + WhipNet.Sent + " received=" + WhipNet.Received + " answered=" + WhipNet.Answered;
 
         public void Tick(float dt)
         {
@@ -234,7 +236,7 @@ namespace ActuallyWorkingEmployees.Features.Whip
             {
                 case "boost": text = Loc.Format("{0} works {1}% faster for {2} min.", name, reason, minutes); break;
                 case "max": text = Loc.Format("{0} is at the highest boost, {1}% faster for {2} min.", name, reason, minutes); break;
-                case "reset": text = Loc.Format("{0} was whipped too often: boost gone, the task restarts.", name); break;
+                case "reset": text = Loc.Format("{0} was whipped too often: boost gone, back to the waiting spot.", name); break;
                 case "restart": text = Loc.Format("{0} restarts the stuck task.", name); break;
                 case "idle":
                     text = string.IsNullOrEmpty(reason)
@@ -316,8 +318,8 @@ namespace ActuallyWorkingEmployees.Features.Whip
                     EndBoost(b);
                     _resets++;
                     Core.Log?.Msg("[Whip] " + name + " was hit " + Options.WhipResetHits.Value + " times within "
-                        + Options.WhipResetSeconds.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " s: boost dropped, task restarted.");
-                    if (Fix7StuckWork.Restart(emp, "whip reset from " + who, true)) { _restarted++; code = "reset"; }
+                        + Options.WhipResetSeconds.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " s: boost dropped, back to the waiting spot.");
+                    if (WhipReturn.Send(emp, "whip reset from " + who)) { _restarted++; code = "reset"; }
                     else { _refused++; code = "fail"; }
                 }
                 else if (!working || still >= StuckAfterSeconds)

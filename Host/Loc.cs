@@ -209,7 +209,7 @@ namespace ActuallyWorkingEmployees.Host
             "Crack it at an employee. A working employee works faster for a while, an idle or stuck one restarts its task.",
             "{0} works {1}% faster for {2} min.",
             "{0} is at the highest boost, {1}% faster for {2} min.",
-            "{0} was whipped too often: boost gone, the task restarts.",
+            "{0} was whipped too often: boost gone, back to the waiting spot.",
             "{0} restarts the stuck task.",
             "{0} has nothing to do right now.",
             "{0} has nothing to do: {1}",

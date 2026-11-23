@@ -56,13 +56,17 @@ for ($i = 0; $i -lt 15; $i++) {
 Result ($setup -match 'setup:') 'setup' "$setup"
 if (-not ($setup -match 'setup:')) { Finish }
 
-# The chemist walks to the station, then works in place for a few seconds: that is the moment to kill.
+# The chemist walks to the station, then works in place for a few seconds: that is the moment to kill. Vanilla starts the
+# cook coroutine on the next minute pass after arrival; a kill in the first second finds no coroutine yet, and the chemist
+# then cooks normally. So the kill waits until he has stood at the station for 3 s.
 $chemist = if ($setup -match 'assigned to (.+?)( \(already\))?, destination') { $Matches[1] } else { '' }
 Write-Host "  chemist: $chemist"
 $before = ChemRestarts $chemist
 $killed = $null
 $deadline = (Get-Date).AddSeconds(150)
 while ((Get-Date) -lt $deadline) {
+    $w = LastLine (S1 run 'awe stuckwork') ([regex]::Escape($chemist) + ' \(Chemist\): behaviour=StartChemistryStationBehaviour work=True moving=False stillFor=')
+    if (-not ($w -match 'stillFor=(\d+)s' -and [int]$Matches[1] -ge 3)) { Wait-Seconds 0.5; continue }
     $k = LastLine (S1 run "awe stuckwork kill $chemist") 'killed the work routine|works in place'
     if ($k -match 'killed the work routine') { $killed = $k; break }
     Wait-Seconds 0.5

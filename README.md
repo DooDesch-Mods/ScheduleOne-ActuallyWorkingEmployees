@@ -40,7 +40,7 @@ On top of that:
 - **Station and growth speed.** Speed multipliers for plants, mushrooms, drying racks, cauldrons, lab ovens and mixing stations.
 - **More employees per property.** Properties can hold more employees than idle spots, and the employee limit can be changed.
 - **Walk through each other.** Employees can ignore each other and furniture colliders while walking.
-- **The whip.** Sold at the Gas-Mart for $150. Crack it at a working employee: +50% work and walk speed for 1 in-game hour, stacking up to 3 times. Each hit restarts the timer for all stacks. Crack it at an idle or stuck one to restart its task. 5 hits on the same employee within 3 seconds drop all stacks and restart the task.
+- **The whip.** Sold at the Gas-Mart for $150. Crack it at a working employee: +50% work and walk speed for 1 in-game hour, stacking up to 3 times. Each hit restarts the timer for all stacks. Crack it at an idle or stuck one to restart its task. 5 hits on the same employee within 3 seconds drop all stacks and send it back to its waiting spot, with every assignment kept.
 - **Diagnostics.** Problem badges, a Setup Doctor and idle time tracking show what holds an employee back. All three are off by default.
 
 ## The phone app
@@ -82,7 +82,7 @@ Section `[AWE_General]`. Switches that apply to the whole mod.
 | `WhipBoostPercent` | 50 | Percent of extra work and walk speed per whip stack on a working employee. Walk speed stays at 6 m/s or below. |
 | `WhipBoostMinutes` | 60 | In-game minutes the whip boost lasts. Every hit restarts the timer for all stacks. |
 | `WhipMaxStacks` | 3 | Highest number of whip stacks on one employee. Each hit on a working employee adds one. |
-| `WhipResetHits` | 5 | This many hits on the same employee within the reset window drop all stacks and restart the task. |
+| `WhipResetHits` | 5 | This many hits on the same employee within the reset window drop all stacks and send it back to its waiting spot. |
 | `WhipResetSeconds` | 3 | Real seconds in which the reset hits must land. |
 | `VerboseLogging` | Off | Writes detailed lines to the log: option changes and feature start-up. |
 

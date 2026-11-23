@@ -53,7 +53,7 @@ namespace ActuallyWorkingEmployees.Config
             3, 1, 10, 1, hostOnly: true, balance: false);
 
         public static readonly IntOption WhipResetHits = new IntOption("General", "WhipResetHits",
-            "Whip reset hits", "This many hits on the same employee within the reset window drop all stacks and restart the task.",
+            "Whip reset hits", "This many hits on the same employee within the reset window drop all stacks and send it back to its waiting spot.",
             5, 2, 20, 1, hostOnly: true, balance: false);
 
         public static readonly FloatOption WhipResetSeconds = new FloatOption("General", "WhipResetSeconds",
