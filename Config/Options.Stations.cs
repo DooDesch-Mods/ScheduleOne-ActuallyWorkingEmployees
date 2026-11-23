@@ -26,6 +26,10 @@ namespace ActuallyWorkingEmployees.Config
             "Lab oven speed", "Speed multiplier for lab ovens. Vanilla: 1.",
             1f, 0.25f, 10f, 0.05f, hostOnly: true, balance: true);
 
+        public static readonly FloatOption ChemistryStationSpeed = new FloatOption("Stations", "ChemistryStationSpeed",
+            "Chemistry station speed", "Speed multiplier for chemistry station cooking. Vanilla: 1.",
+            1f, 0.25f, 10f, 0.05f, hostOnly: true, balance: true);
+
         public static readonly FloatOption MixingStationSpeed = new FloatOption("Stations", "MixingStationSpeed",
             "Mixing station speed", "Speed multiplier for mixing stations. Vanilla: 1.",
             1f, 0.25f, 10f, 0.05f, hostOnly: true, balance: true);

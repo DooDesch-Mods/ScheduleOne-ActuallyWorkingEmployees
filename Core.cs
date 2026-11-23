@@ -147,6 +147,15 @@ namespace ActuallyWorkingEmployees
             OptionsFile.Tick();
         }
 
+        // The lash follows the hand after the animator has posed it this frame; from OnUpdate it trailed one frame behind
+        // and left a gap between handle tip and lash during a swing.
+        public override void OnLateUpdate()
+        {
+            if (!InWorld) return;
+            Features.Whip.WhipLash.Tick(Time.deltaTime);
+            Features.Whip.WhipFx.Tick();
+        }
+
         public override void OnApplicationQuit()
         {
             OptionsFile.Flush();

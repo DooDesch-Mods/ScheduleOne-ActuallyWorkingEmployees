@@ -121,7 +121,7 @@ namespace ActuallyWorkingEmployees.Debugging
                 if (grids == null) continue;
                 for (int g = 0; g < grids.Count; g++)
                 {
-                    if (grids[g] == null || !FreeRegion(grids[g], out ox, out oy)) continue;
+                    if (grids[g] == null || !FreeRegion(grids[g], RegionW, RegionH, out ox, out oy)) continue;
                     property = prop; grid = grids[g];
                     return true;
                 }
@@ -132,7 +132,7 @@ namespace ActuallyWorkingEmployees.Debugging
         }
 
         // Copies the grid into a managed map once; the search itself then makes no interop calls.
-        private static bool FreeRegion(Grid grid, out int ox, out int oy)
+        internal static bool FreeRegion(Grid grid, int regionW, int regionH, out int ox, out int oy)
         {
             ox = oy = 0;
             var tiles = grid.Tiles;
@@ -146,12 +146,12 @@ namespace ActuallyWorkingEmployees.Debugging
                 if (t == null || t.x < 0 || t.y < 0) continue;
                 free[t.x, t.y] = (t.BuildableOccupants == null || t.BuildableOccupants.Count == 0) && t.CanBeBuiltOn();
             }
-            for (int x = 0; x + RegionW <= maxX + 1; x++)
-                for (int y = 0; y + RegionH <= maxY + 1; y++)
+            for (int x = 0; x + regionW <= maxX + 1; x++)
+                for (int y = 0; y + regionH <= maxY + 1; y++)
                 {
                     bool ok = true;
-                    for (int i = 0; i < RegionW && ok; i++)
-                        for (int j = 0; j < RegionH && ok; j++)
+                    for (int i = 0; i < regionW && ok; i++)
+                        for (int j = 0; j < regionH && ok; j++)
                             ok = free[x + i, y + j];
                     if (ok) { ox = x; oy = y; return true; }
                 }
