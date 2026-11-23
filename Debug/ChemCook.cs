@@ -31,11 +31,11 @@ namespace ActuallyWorkingEmployees.Debugging
         public string Name => "chemcook";
 
         private const int RegionW = 10, RegionH = 6;
-        private static readonly int[] StationAt = { 1, 2, 0 }, RackAt = { 6, 2, 0 };
+        private static readonly int[] StationAt = { 1, 2, 0 }, RackAt = { 6, 2, 0 }, LockerAt = { 4, 5, 0 };
 
         private readonly List<BuildableItem> _items = new List<BuildableItem>();
         private ChemistryStation _station;
-        private BuildableItem _rack;
+        private BuildableItem _rack, _locker;
         private PropertyT _property;
         private Chemist _chemist;
         private bool _started, _complete, _finalized, _moved;
@@ -52,7 +52,7 @@ namespace ActuallyWorkingEmployees.Debugging
         public void Reset()
         {
             _items.Clear();
-            _station = null; _rack = null; _property = null; _chemist = null;
+            _station = null; _rack = null; _locker = null; _property = null; _chemist = null;
             ClearRun("reset");
         }
 
@@ -115,22 +115,40 @@ namespace ActuallyWorkingEmployees.Debugging
             _station = s?.TryCast<ChemistryStation>();
             _rack = r;
 
-            bool hasChemist = FindChemist() != null;
-            if (!hasChemist) NetworkSingleton<EmployeeManager>.Instance.CreateNewEmployee(_property, EEmployeeType.Chemist);
+            // A chemist without a locker never works ("I haven't been assigned a locker"). A save that ran the rig before can
+            // hold such hires on a full property, so only a chemist with a locker counts; otherwise hire one.
+            var found = FindChemist();
+            bool hasChemist = found != null && found.GetHome() != null;
+            if (!hasChemist)
+            {
+                // The lockers of a played property are usually all taken, so the hire gets its own; Setup assigns it.
+                var lockerDef = Il2CppScheduleOne.Registry.GetItem("locker");
+                var l = lockerDef != null ? build.CreateGridItem(lockerDef.GetDefaultInstance(1), grid, new Vector2(ox + LockerAt[0], oy + LockerAt[1]), LockerAt[2], "", null) : null;
+                if (l != null) { _items.Add(l); _locker = l; }
+                else Core.Log?.Warning("[Dev] [chemcook] the locker was not created" + (lockerDef == null ? " (item 'locker' is not in the registry)" : "") + "; the hired chemist may stay without one.");
+                NetworkSingleton<EmployeeManager>.Instance.CreateNewEmployee(_property, EEmployeeType.Chemist);
+            }
             var at = grid.GetTile(new Coordinate(ox + RackAt[0] + 3, oy + RackAt[1]));
             Vector3 player = at != null ? at.transform.position : grid.transform.position;
             Core.Log?.Msg("[Dev] [chemcook] placed " + _items.Count + " item(s) on " + _property.PropertyCode + " at tile " + ox + "," + oy
                 + (hasChemist ? "" : ", hired a chemist") + ". player=" + player.x.ToString("F1") + "," + player.y.ToString("F1") + "," + player.z.ToString("F1"));
         }
 
+        // The chemist of the rig's property: one with a locker that does nothing first, then one with a locker, then any.
         private Chemist FindChemist()
         {
+            Chemist withHome = null, any = null;
             foreach (Employee e in Rel.Employees())
             {
                 var c = e.TryCast<Chemist>();
-                if (c != null && (_property == null || (c.AssignedProperty != null && c.AssignedProperty.PropertyCode == _property.PropertyCode))) return c;
+                if (c == null || (_property != null && (c.AssignedProperty == null || c.AssignedProperty.PropertyCode != _property.PropertyCode))) continue;
+                if (any == null) any = c;
+                if (c.GetHome() == null) continue;
+                var active = c.Behaviour != null ? c.Behaviour.activeBehaviour : null;
+                if (active == null || !Rel.IsWork(active)) return c;
+                if (withHome == null) withHome = c;
             }
-            return null;
+            return withHome ?? any;
         }
 
         private void Setup(string recipeName)
@@ -139,6 +157,18 @@ namespace ActuallyWorkingEmployees.Debugging
             if (_station.CurrentCookOperation != null) { Core.Log?.Warning("[Dev] [chemcook] the station still cooks; wait or 'awe chemcook clear'."); return; }
             _chemist = FindChemist();
             if (_chemist == null) { Core.Log?.Warning("[Dev] [chemcook] no chemist on " + _property.PropertyCode + " yet; a hired one needs a few seconds to spawn."); return; }
+            if (_chemist.GetHome() == null && _locker != null && !Rel.IsGone(_locker) && _chemist.configuration != null)
+            {
+                _chemist.configuration.Home.SetObject(_locker, true);
+                Core.Log?.Msg("[Dev] [chemcook] gave " + Rel.Name(_chemist) + " the rig's locker: " + (_chemist.GetHome() != null ? "assigned" : "still none") + ".");
+            }
+            // A hire starts unpaid and an empty locker cannot pay him, so he waits outside ("I haven't been paid yet").
+            if (!_chemist.PaidForToday)
+            {
+                _chemist.SetIsPaid();
+                Core.Log?.Msg("[Dev] [chemcook] paid " + Rel.Name(_chemist) + " for today: " + (_chemist.PaidForToday ? "yes" : "still unpaid") + ".");
+            }
+            if (_chemist.GetHome() == null) Core.Log?.Warning("[Dev] [chemcook] " + Rel.Name(_chemist) + " has no locker on " + _property.PropertyCode + " and will not start the cook; free a locker or use a fresh save.");
             var cfg = _station.Configuration?.TryCast<ChemistryStationConfiguration>();
             if (cfg == null) { Core.Log?.Warning("[Dev] [chemcook] the station has no configuration yet."); return; }
             var ccfg = _chemist.configuration;
@@ -192,7 +222,7 @@ namespace ActuallyWorkingEmployees.Debugging
                 n++;
             }
             _items.Clear();
-            _station = null; _rack = null; _property = null; _chemist = null;
+            _station = null; _rack = null; _locker = null; _property = null; _chemist = null;
             ClearRun("command");
             Core.Log?.Msg("[Dev] [chemcook] removed " + n + " rig item(s).");
         }

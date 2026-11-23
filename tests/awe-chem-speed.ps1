@@ -8,8 +8,8 @@ the station finalizes on that minute, and the chemist carries the product to the
 setup' selects the first recipe, sets the rack as destination and fills the ingredients, so the chemist starts the
 cook himself. 'awe chemcook status' lists the events as name@game-minutes-since-start:
   started, complete (ChemistryCookOperation.IsComplete), finalized (operation gone, output filled), moved (output carried).
-Checks per speed: the recipe's cook time is round(game / s); complete and finalized land on that minute (2 minutes of
-polling slack); the chemist moved the output. Across speeds: the cook at the highest speed took about game / s.
+Checks per speed: the recipe's cook time is round(game / s); complete lands on that minute (2 minutes of polling
+slack) and finalized at most 3 minutes after complete; the chemist moved the output. Across speeds: the cook at the highest speed took about game / s.
 Resets the options, the time scale and the rig at the end. Prints PASS or FAIL per check and a SUMMARY line.
 #>
 param(
@@ -48,7 +48,7 @@ S1 run 'settimescale 1' | Out-Null
 S1 run 'awe chemcook clear' | Out-Null
 $place = S1 run 'awe chemcook place'
 $line = LastLine $place '\[chemcook\] placed'
-Result ($line -match 'placed 2 item') 'rig-placed' "$line"
+Result ($line -match 'placed [23] item') 'rig-placed' "$line"
 if ($line -match 'player=([-\d.]+),([-\d.]+),([-\d.]+)') {
     $tp = S1 tp $Matches[1] ([double]::Parse($Matches[2], $inv) + 0.2).ToString($inv) $Matches[3]
     Write-Host "  tp: $($tp.Split("`n")[-1])"
@@ -93,10 +93,11 @@ foreach ($speed in ($Speeds -split ',' | ForEach-Object { [double]::Parse($_.Tri
     $ev = Events $status
     Result ($ev.ContainsKey('started')) "$tag-chemist-started" ''
     if (-not $ev.ContainsKey('started')) { continue }
-    foreach ($n in 'complete', 'finalized') {
-        $at = if ($ev.ContainsKey($n)) { $ev[$n] } else { -1 }
-        Result ($at -ge 0 -and [math]::Abs($at - $want) -le 2) "$tag-$n" "at=$at want=$want"
-    }
+    $done = if ($ev.ContainsKey('complete')) { $ev['complete'] } else { -1 }
+    Result ($done -ge 0 -and [math]::Abs($done - $want) -le 2) "$tag-complete" "at=$done want=$want"
+    # Vanilla finalizes the operation about 2 game minutes after it completes, so finalized is measured from complete.
+    $fin = if ($ev.ContainsKey('finalized')) { $ev['finalized'] } else { -1 }
+    Result ($fin -ge 0 -and $done -ge 0 -and ($fin - $done) -ge 0 -and ($fin - $done) -le 3) "$tag-finalized" "at=$fin complete=$done want=$want"
     Result ($ev.ContainsKey('moved')) "$tag-chemist-moved" "$(if ($ev.ContainsKey('moved')) { "at=$($ev['moved'])" } else { 'no move' })"
     if ($ev.ContainsKey('finalized')) { $took[$speed] = $ev['finalized'] }
 }

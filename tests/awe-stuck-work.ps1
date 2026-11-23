@@ -26,7 +26,8 @@ function Result([bool]$ok, [string]$name, [string]$detail) {
 function S1 { param([Parameter(ValueFromRemainingArguments)][string[]]$A) (& python $s1 --slot $Slot @A 2>&1 | Out-String).Trim() }
 function Wait-Seconds([double]$s) { $t = (Get-Date).AddSeconds($s); while ((Get-Date) -lt $t) { Start-Sleep -Milliseconds 250 } }
 function LastLine([string]$text, [string]$pattern) { ($text -split "`n" | Where-Object { $_ -match $pattern } | Select-Object -Last 1) }
-function Restarts { $l = LastLine (S1 run 'awe stuckwork') 'fix7|on=\d checks='; if ($l -match 'restarts=(\d+)') { [int]$Matches[1] } else { -1 } }
+# Fix 7 also restarts other employees that hang on their own (a fresh save has some), so the checks count only the chemist's restarts.
+function ChemRestarts([string]$name) { @((S1 log --grep "[Fix7] restarted $name (" -n 50) -split "`n" | Where-Object { $_ -match 'Fix7\] restarted' }).Count }
 function Finish {
     S1 run 'awe chemcook clear' | Out-Null
     S1 run 'awe reset reliability.stuckworkseconds' | Out-Null
@@ -40,7 +41,7 @@ $set = S1 run "awe set reliability.stuckworkseconds $StuckSeconds"
 Write-Host "  set: $(LastLine $set 'stuckworkseconds')"
 $place = S1 run 'awe chemcook place'
 $line = LastLine $place '\[chemcook\] placed'
-Result ($line -match 'placed 2 item') 'rig-placed' "$line"
+Result ($line -match 'placed [23] item') 'rig-placed' "$line"
 if ($line -match 'player=([-\d.]+),([-\d.]+),([-\d.]+)') {
     S1 tp $Matches[1] ([double]::Parse($Matches[2], $inv) + 0.2).ToString($inv) $Matches[3] | Out-Null
 } else { Finish }
@@ -54,34 +55,39 @@ for ($i = 0; $i -lt 15; $i++) {
 }
 Result ($setup -match 'setup:') 'setup' "$setup"
 if (-not ($setup -match 'setup:')) { Finish }
-$before = Restarts
 
 # The chemist walks to the station, then works in place for a few seconds: that is the moment to kill.
+$chemist = if ($setup -match 'assigned to (.+?)( \(already\))?, destination') { $Matches[1] } else { '' }
+Write-Host "  chemist: $chemist"
+$before = ChemRestarts $chemist
 $killed = $null
-$deadline = (Get-Date).AddSeconds(90)
+$deadline = (Get-Date).AddSeconds(150)
 while ((Get-Date) -lt $deadline) {
-    $k = LastLine (S1 run 'awe stuckwork kill') 'killed the work routine|no employee works in place'
+    $k = LastLine (S1 run "awe stuckwork kill $chemist") 'killed the work routine|works in place'
     if ($k -match 'killed the work routine') { $killed = $k; break }
     Wait-Seconds 0.5
 }
 $killedAt = Get-Date
 Result ($null -ne $killed) 'killed-in-place' "$killed"
 if (-not $killed) { Finish }
-$atKill = Restarts
+$atKill = ChemRestarts $chemist
 Result ($before -ge 0 -and $atKill -eq $before) 'no-restart-before-kill' "before=$before atKill=$atKill"
 
 $after = $atKill
 $deadline = (Get-Date).AddSeconds($StuckSeconds + 60)
 while ((Get-Date) -lt $deadline) {
-    $after = Restarts
+    $after = ChemRestarts $chemist
     if ($after -gt $atKill) { break }
     Wait-Seconds 1
 }
 $took = ((Get-Date) - $killedAt).TotalSeconds
+# The watch counts from the last progress, so an employee that already stood still before the kill restarts earlier.
+$head = if ($killed -match 'still for (\d+) s') { [int]$Matches[1] } else { 0 }
+$due = [Math]::Max(0, $StuckSeconds - $head)
 Result ($after -gt $atKill) 'restarted' "restarts $atKill -> $after"
-Result ($after -gt $atKill -and $took -ge ($StuckSeconds - 2) -and $took -le ($StuckSeconds + 25)) 'restart-timing' ("{0:0} s after the kill, limit $StuckSeconds s" -f $took)
+Result ($after -gt $atKill -and $took -ge ($due - 2) -and $took -le ($due + 25)) 'restart-timing' ("{0:0} s after the kill, due after {1} s (limit $StuckSeconds s, still {2} s at the kill)" -f $took, $due, $head)
 
-$log = S1 log --grep 'Fix7\] restarted' -n 400
+$log = S1 log --grep '[Fix7] restarted' -n 20   # plain substring, not a regex
 $warn = LastLine $log 'Fix7\] restarted'
 Result ($warn -match 'restarted' -and $warn -match 'W\]|WARN|Warning|\[Warn') 'warn-logged' "$warn"
 
