@@ -14,9 +14,9 @@ using ActuallyWorkingEmployees.Networking;
 namespace ActuallyWorkingEmployees.Features.Balance
 {
     /// <summary>
-    /// The grow-container behaviours divide GetActionDuration() by the employee's work speed when an action starts, so
-    /// a postfix that returns the wanted seconds is all an action time needs. One patch class per target: a missing
-    /// target must not take the others down.
+    /// The grow-container behaviours divide GetActionDuration() by the employee's work speed when an action starts;
+    /// <see cref="Awe_GrowAction_Duration_Patch"/> scales that computed wait to the wanted seconds.
+    /// One patch class per target: a missing target must not take the others down.
     /// </summary>
     internal static class DurationPatches
     {
@@ -115,13 +115,21 @@ namespace ActuallyWorkingEmployees.Features.Balance
     }
 
     /// <summary>
-    /// GetActionDuration of every grow-container behaviour. Several of them compile to the same native function
-    /// (AddSoil, Additive and Water all return 10f; Sow and ApplySpawn 15f), so each native address is patched once
-    /// (see <see cref="NativeMethods"/>) and the postfix picks the option by the instance's real class.
+    /// Action time of every grow-container behaviour (AWE#54). GrowContainerBehaviour.PerformAction starts a local coroutine
+    /// (g__Routine), whose first step computes waitTime = GetActionDuration() / CurrentWorkSpeed and then
+    /// counts frames up to it (Il2CppScheduleOne.NPCs.Behaviour/GrowContainerBehaviour.cs, PerformAction).
+    ///
+    /// Neither neighbour can carry the patch. GetActionDuration is folded in the native build: AddSoil, Additive and Water
+    /// (all 10f), and Sow and ApplySpawn (15f), share one function each, so a mod that patches a sibling after AWE detours
+    /// the address twice and overflows the stack, as in AWE#51. PerformAction is private and inlined into OnActiveTick,
+    /// so a patch on it never runs. The coroutine's MoveNext has its own native code and Unity calls it through the
+    /// enumerator interface. After its first step, waitTime is scaled by wanted seconds / vanilla seconds.
     /// </summary>
     [HarmonyPatch]
     internal static class Awe_GrowAction_Duration_Patch
     {
+        private const string WaitField = "_waitTime_5__2";
+
         private struct Target { internal Type Type; internal Func<FloatOption> Option; internal bool PerUnit; }
 
         private static readonly Target[] _targets =
@@ -135,31 +143,80 @@ namespace ActuallyWorkingEmployees.Features.Balance
             new Target { Type = typeof(HarvestMushroomBedBehaviour), Option = () => Options.BotanistMushroomHarvestTimePerUnit, PerUnit = true },
         };
 
-        private static IEnumerable<MethodBase> TargetMethods()
+        private static PropertyInfo _state, _this, _wait;
+        private static MethodBase _target;
+
+        /// <summary>
+        /// The MoveNext of the PerformAction coroutine. The interop name of the nested type is generated from its shape,
+        /// so the type is found by its waitTime field instead.
+        /// </summary>
+        private static MethodBase Find()
         {
-            var all = new List<MethodBase>();
-            foreach (Target t in _targets)
+            if (_target != null) return _target;
+            foreach (Type t in typeof(GrowContainerBehaviour).GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
             {
-                MethodBase m = AccessTools.DeclaredMethod(t.Type, nameof(GrowContainerBehaviour.GetActionDuration), Type.EmptyTypes);
-                if (m == null) { MelonLoader.MelonLogger.Warning("[Actually Working Employees] " + t.Type.Name + ".GetActionDuration not found, its action time option has no effect."); continue; }
-                all.Add(m);
+                PropertyInfo wait = t.GetProperty(WaitField, BindingFlags.Public | BindingFlags.Instance);
+                if (wait == null) continue;
+                _wait = wait;
+                _state = t.GetProperty("__1__state", BindingFlags.Public | BindingFlags.Instance);
+                _this = t.GetProperty("__4__this", BindingFlags.Public | BindingFlags.Instance);
+                _target = t.GetMethod("MoveNext", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+                if (_state == null || _this == null || _target == null)
+                {
+                    Core.Log?.Warning("[bal-botanist] the PerformAction coroutine " + t.Name + " lacks state, owner or MoveNext; botanist action times keep their vanilla values.");
+                    _target = null;
+                    return null;
+                }
+                return _target;
             }
-            return NativeMethods.OnePerAddress("GetActionDuration", all);
+            Core.Log?.Warning("[bal-botanist] no PerformAction coroutine with " + WaitField + " in GrowContainerBehaviour; botanist action times keep their vanilla values.");
+            return null;
         }
 
-        private static void Postfix(GrowContainerBehaviour __instance, ref float __result)
+        private static bool Prepare(MethodBase original) => original == null ? Find() != null : NativeMethods.AllowPatch(original);
+
+        private static MethodBase TargetMethod() => Find();
+
+        /// <summary>True on the coroutine's first step, the one that computes waitTime.</summary>
+        private static void Prefix(object __instance, out bool __state)
         {
-            if (__instance == null) { Rel.MsgOnce("duration:null", "[bal-botanist] GetActionDuration ran without an instance, its value is left unchanged."); return; }
-            string cls = Rel.TypeName(__instance);
+            __state = false;
+            try { __state = Net.IsServer && (int)_state.GetValue(__instance) == 0; }
+            catch (Exception e) { Core.Caught("balance: action time state", e); }
+        }
+
+        private static void Postfix(object __instance, bool __state)
+        {
+            if (!__state) return;
+            try { Scale(__instance); }
+            catch (Exception e) { Core.Caught("balance: action time", e); }
+        }
+
+        private static void Scale(object routine)
+        {
+            var b = _this.GetValue(routine) as GrowContainerBehaviour;
+            if (b == null) { Rel.MsgOnce("duration:null", "[bal-botanist] a PerformAction coroutine has no behaviour, its action time is left unchanged."); return; }
+            string cls = Rel.TypeName(b);
             foreach (Target t in _targets)
             {
                 if (t.Type.Name != cls) continue;
-                if (t.PerUnit) DurationPatches.PerUnit(ref __result, t.Option());
-                else DurationPatches.Fixed(ref __result, t.Option());
+                float vanilla = b.GetActionDuration();
+                float want = vanilla;
+                if (t.PerUnit) DurationPatches.PerUnit(ref want, t.Option());
+                else DurationPatches.Fixed(ref want, t.Option());
+                if (Math.Abs(want - vanilla) < 0.0001f) return;
+                if (vanilla <= 0f) { Rel.MsgOnce("duration:zero:" + cls, "[bal-botanist] " + cls + " has a vanilla action time of " + Eff.F(vanilla) + " s, its option is left out."); return; }
+                float before = (float)_wait.GetValue(routine);
+                float after = before * Math.Max(0f, want) / vanilla;
+                _wait.SetValue(routine, after);
+#if DEBUG
+                float speed = b._botanist != null ? b._botanist.CurrentWorkSpeed : 1f;
+                Rel.MsgOnce("duration:wait:" + cls + ":" + Eff.F(want), "[Dev] [bal-botanist] " + cls + " PerformAction wait " + Eff.F(before) + " s -> " + Eff.F(after)
+                    + " s: vanilla " + Eff.F(vanilla) + " s, wanted " + Eff.F(want) + " s, work speed x" + Eff.F(speed) + ".");
+#endif
                 return;
             }
-            // A folded address can also belong to an unrelated method of the game; that caller keeps its value.
-            Rel.MsgOnce("duration:other:" + cls, "[bal-botanist] GetActionDuration code is shared with " + cls + ", its value is left unchanged.");
+            Rel.MsgOnce("duration:other:" + cls, "[bal-botanist] " + cls + " has no action time option, its value is left unchanged.");
         }
     }
 

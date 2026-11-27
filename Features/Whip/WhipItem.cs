@@ -65,7 +65,7 @@ namespace ActuallyWorkingEmployees.Features.Whip
                         animationTrigger: "RightArm_Hold_ClosedHand")
                     .Build();
 
-                S1API.Items.Storable.ItemCreator.CreateBuilder()
+                var builder = S1API.Items.Storable.ItemCreator.CreateBuilder()
                     .WithBasicInfo(Id, Loc.Text("Whip"),
                         Loc.Text("Crack it at an employee. A working employee works faster for a while, an idle or stuck one restarts its task."),
                         S1API.Items.ItemCategory.Tools)
@@ -73,8 +73,11 @@ namespace ActuallyWorkingEmployees.Features.Whip
                     .WithPricing(Options.WhipPrice.Value, 0.4f)
                     .WithLegalStatus(S1API.Items.LegalStatus.Legal)
                     .WithIcon(Icon())
-                    .WithEquippable(equippable)
-                    .Build();
+                    .WithEquippable(equippable);
+                // A StoredItem with footprint tiles, so a storage can draw the whip (AWE#68); WhipStoredItem logs when it cannot.
+                GameObject stored = WhipStoredItem.Ensure();
+                if (stored != null) builder = builder.WithStoredItem(stored);
+                builder.Build();
 
                 _registered = true;
                 Core.Log?.Msg("[Whip] item '" + Id + "' registered at $" + Options.WhipPrice.Value + ".");
