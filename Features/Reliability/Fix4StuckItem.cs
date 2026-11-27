@@ -16,6 +16,11 @@ namespace ActuallyWorkingEmployees.Features.Reliability
     /// MoveItemBehaviour clears its route in EndTransit and only returns a picked-up item on its own failure paths,
     /// so a Deactivate or Disable in the middle of a transit strands the items. The prefix remembers the route, the
     /// item and the picked-up amount; the postfix puts what is still carried back into the source's output.
+    ///
+    /// Only Deactivate is patched. Disable reaches it on every path that ends a transit: Behaviour.Disable calls
+    /// Deactivate while the behaviour is active, and MoveItemBehaviour.Disable calls it once more only if it still is.
+    /// MoveItemBehaviour.Disable itself is not patched: the native build folds it with nine other behaviours' Disable,
+    /// and a mod that patches one of those after AWE would detour the shared code twice (AWE#54).
     /// </summary>
     internal sealed class Fix4StuckItem : IFeature
     {
@@ -25,9 +30,6 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         internal sealed class Carry { internal TransitRoute Route; internal ItemInstance Template; internal int Grabbed; }
 
         private static int _returned, _sourceFull, _inspected;
-
-        /// <summary>True while MoveItemBehaviour.Disable runs; the Deactivate it calls is then handled by the Disable hook.</summary>
-        internal static bool InDisable;
 
         public void Init()
         {
@@ -47,8 +49,6 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         {
             if (!Rel.Gate(FeatureName, Options.FixStuckInventoryItem.Value)) return null;
             if (b.assignedRoute == null || b.itemToRetrieveTemplate == null || b.grabbedAmount <= 0) return null;
-            // Disable runs Deactivate itself: its own hook already holds the state, the nested pair must not return a second time.
-            if (InDisable) return null;
             return new Carry { Route = b.assignedRoute, Template = b.itemToRetrieveTemplate, Grabbed = b.grabbedAmount };
         }
 
@@ -122,7 +122,7 @@ namespace ActuallyWorkingEmployees.Features.Reliability
                 MoveItem mover = emp.GetComponentInChildren<MoveItem>(true);
                 Core.Log?.Msg("[Dev] [Fix4] " + Rel.Name(emp) + ": carries " + carried + (what.Length > 0 ? " (" + what.Trim() + ")" : "")
                     + " mover=" + (mover == null ? "none" : "active=" + mover.Active + " grabbed=" + mover.grabbedAmount));
-                // Disable runs the same prefix and postfix as a real interruption.
+                // Disable reaches the patched Deactivate the same way a real interruption does.
                 if (cut && mover != null && mover.Enabled) mover.Disable_Networked(null);
             }
             Core.Log?.Msg("[Dev] [Fix4] " + new Fix4StuckItem().Status);
@@ -149,30 +149,4 @@ namespace ActuallyWorkingEmployees.Features.Reliability
         }
     }
 
-    /// <summary>MoveItemBehaviour.Disable (Il2CppScheduleOne.NPCs.Behaviour/MoveItemBehaviour.cs:1128).</summary>
-    [HarmonyPatch(typeof(MoveItem), nameof(MoveItem.Disable))]
-    internal static class Awe_Fix4_MoveItemDisable_Patch
-    {
-        private static bool Prepare(System.Reflection.MethodBase original) => original == null || ActuallyWorkingEmployees.Compat.NativeMethods.AllowPatch(original);
-        private static void Prefix(MoveItem __instance, out Fix4StuckItem.Carry __state)
-        {
-            __state = null;
-            try { __state = Fix4StuckItem.Capture(__instance); }
-            catch (Exception e) { Core.Failed("fix4: Disable prefix", e); }
-            Fix4StuckItem.InDisable = true;
-        }
-
-        private static void Postfix(MoveItem __instance, Fix4StuckItem.Carry __state)
-        {
-            try { Fix4StuckItem.Return(__instance, __state, "task disabled", false); }
-            catch (Exception e) { Core.Failed("fix4: Disable postfix", e); }
-        }
-
-        // Runs after the original even when it throws, so the nested-call flag cannot stay set.
-        private static Exception Finalizer(Exception __exception)
-        {
-            Fix4StuckItem.InDisable = false;
-            return __exception;
-        }
-    }
 }
