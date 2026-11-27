@@ -4,6 +4,18 @@ All notable changes to Actually Working Employees are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to Semantic Versioning.
 
+## [1.4.1] - 2026-11-27
+
+### Fixed
+
+- Putting the whip into a storage no longer leaves a copy in your inventory, and items put in after it move
+  normally again.
+
+### Changed
+
+- Fewer clashes with other mods: botanist action times and the stuck-item fix no longer share game code with
+  mods that change other employee tasks.
+
 ## [1.4.0] - 2026-11-23
 
 ### Added
