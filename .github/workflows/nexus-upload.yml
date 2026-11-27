@@ -1,0 +1,121 @@
+name: Nexus upload for an existing release
+
+# Runs only the Nexus step for a tag that is already on GitHub and Thunderstore, for a release whose Nexus
+# file version was rejected. Takes the Nexus ZIP from the "ActuallyWorkingEmployees-nexus" artifact of that tag's release run
+# and the notes from CHANGELOG.md at that tag.
+# Start: `gh workflow run nexus-upload.yml -f tag=vX.Y.Z -f run_id=<id of the tag's release run>`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Released tag, vX.Y.Z"
+        required: true
+      run_id:
+        description: "Id of the tag's 'Build and Release on Tag' run"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  nexus:
+    runs-on: ubuntu-latest
+    if: ${{ vars.NEXUS_FILE_GROUP_ID != '' && vars.NEXUS_MOD_ID != '' }}
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Archive and notes
+        id: prep
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Tag must be exactly vX.Y.Z, got '$TAG'."
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          RUN_TAG=$(gh run view "$RUN_ID" -R "$GITHUB_REPOSITORY" --json headBranch -q .headBranch)
+          if [ "$RUN_TAG" != "$TAG" ]; then
+            echo "::error::Run $RUN_ID belongs to '$RUN_TAG', not to $TAG."
+            exit 1
+          fi
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n ActuallyWorkingEmployees-nexus
+          ls -l "ActuallyWorkingEmployees_${VERSION}_nexus.zip"
+          python3 - "$VERSION" <<'PY'
+          import os, re, sys
+
+          version = sys.argv[1]
+          lines, grab = [], False
+          for line in open("CHANGELOG.md", encoding="utf-8").read().splitlines():
+              if line.startswith(f"## [{version}]"):
+                  grab = True
+                  continue
+              if line.startswith("## [") and grab:
+                  break
+              if grab:
+                  lines.append(line)
+          if not any(l.strip() for l in lines):
+              print(f"::error::CHANGELOG.md has no '## [{version}]' section.")
+              sys.exit(1)
+
+          def inline(s):
+              s = s.replace("`", "")
+              s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
+              return re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 (\2)", s)
+
+          # Same plain-text rendering as the tag workflow: one entry per line, headings on their own line,
+          # hard-wrapped bullets joined back into one line.
+          out, item, pad = [], "", ""
+          def flush():
+              global item, pad
+              if item:
+                  out.append(pad + inline(item))
+              item, pad = "", ""
+          for raw in lines:
+              raw = raw.rstrip()
+              if not raw.strip():
+                  flush(); continue
+              if re.match(r"^#+ ", raw):
+                  flush(); out.append(inline(re.sub(r"^#+ +", "", raw))); continue
+              m = re.match(r"^([ \t]*)[-*] +(.*)$", raw)
+              if m:
+                  flush(); pad = "  " if len(m.group(1)) >= 2 else ""; item = m.group(2); continue
+              if item:
+                  item += " " + raw.strip(); continue
+              out.append(inline(raw.strip()))
+          flush()
+          plain = "\n".join(out)
+
+          # The Nexus file description takes at most 255 characters.
+          desc = plain if len(plain) <= 255 else f"Everything new in {version} is listed in the Changelogs tab."
+          print(f"changelog: {len(plain)} characters, description: {len(desc)} characters")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"version={version}\n")
+              f.write(f"plain<<CHANGELOG_EOF\n{plain}\nCHANGELOG_EOF\n")
+              f.write(f"desc<<CHANGELOG_EOF\n{desc}\nCHANGELOG_EOF\n")
+          PY
+
+      - name: Upload to Nexus Mods
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.10
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_id: ${{ vars.NEXUS_FILE_GROUP_ID }}
+          mod_id: ${{ vars.NEXUS_MOD_ID }}
+          filename: "ActuallyWorkingEmployees_${{ steps.prep.outputs.version }}_nexus.zip"
+          version: ${{ steps.prep.outputs.version }}
+          display_name: "Actually Working Employees ${{ steps.prep.outputs.version }}"
+          description: ${{ steps.prep.outputs.desc }}
+          changelog: ${{ steps.prep.outputs.plain }}
+          category: main
+          archive_existing_version: true
+          update_mod_version: true
+          primary_mod_manager_download: true
+          allow_mod_manager_download: true

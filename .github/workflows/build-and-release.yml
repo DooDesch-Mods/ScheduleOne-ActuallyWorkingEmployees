@@ -29,6 +29,7 @@ jobs:
       mlvscan_badges: ${{ steps.mlvscan.outputs.badges }}
       notes_bbcode: ${{ steps.changelog.outputs.notes_bbcode }}
       notes_plain: ${{ steps.changelog.outputs.notes_plain }}
+      nexus_desc: ${{ steps.changelog.outputs.nexus_desc }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -147,6 +148,19 @@ jobs:
           {
             echo "notes_bbcode<<CHANGELOG_EOF"
             echo "$BBCODE"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+          # The Nexus FILE description takes at most 255 characters; a longer one makes Nexus reject the
+          # whole file version with a 422 after the archive is already uploaded. A longer section goes to
+          # the Changelogs tab in full and the file description points there.
+          NEXUS_DESC="$BBCODE"
+          if [ "$(printf '%s' "$NEXUS_DESC" | wc -m)" -gt 255 ]; then
+            NEXUS_DESC="Everything new in $VERSION is listed in the Changelogs tab."
+            echo "::notice::Changelog section is longer than 255 characters; the Nexus file description points to the Changelogs tab."
+          fi
+          {
+            echo "nexus_desc<<CHANGELOG_EOF"
+            echo "$NEXUS_DESC"
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
           # A THIRD rendering, and it is not a duplicate of the one above. Nexus has two fields with two
@@ -424,7 +438,7 @@ jobs:
           filename: "ActuallyWorkingEmployees_${{ needs.build.outputs.version }}_nexus.zip"
           version: ${{ needs.build.outputs.version }}
           display_name: "Actually Working Employees ${{ needs.build.outputs.version }}"
-          description: ${{ needs.build.outputs.notes_bbcode }}
+          description: ${{ needs.build.outputs.nexus_desc }}
           changelog: ${{ github.event_name == 'push' && github.run_attempt == 1 && needs.build.outputs.notes_plain || '' }}
           category: main
           archive_existing_version: true
